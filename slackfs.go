@@ -12,7 +12,7 @@ import (
 )
 
 type FS struct {
-	super Super
+	super *Super
 	api   *slack.Slack
 	ws    *slack.SlackWS
 	out   chan slack.OutgoingMessage
@@ -36,7 +36,7 @@ func NewFS(token string) (*FS, error) {
 		users: make(map[string]*slack.User),
 	}
 
-	fs.super.Init()
+	fs.super = NewSuper()
 
 	api.SetDebug(true)
 	go ws.HandleIncomingEvents(fs.in)
@@ -129,19 +129,21 @@ var userAttrs = []AttrType{
 	{Name: "is_bot", ReadAll: readUserIsBot},
 }
 
-type UserDir struct {
-	n    Node
-	user *slack.User
-}
+func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
+	dn, err := NewDirNode(parent, u.Id, u)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode: %s", err)
+	}
 
-func NewUserDir(u *slack.User) (*UserDir, error) {
-	ud := new(UserDir)
-	ud.user = u
-	ud.n.Init(ud)
+	for _, ua := range userAttrs {
+		an, err := NewAttrNode(dn, &ua, u)
+		if err != nil {
+			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &ua, err)
+		}
+		an.n.Activate()
+	}
 
-	// TODO(bp) init parent
+	dn.n.Activate()
 
-	ud.n.name = u.Id
-
-	return ud, nil
+	return dn, nil
 }
