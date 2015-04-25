@@ -5,40 +5,18 @@ import (
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
-	
+
 	//"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"golang.org/x/net/context"
 )
 
-type Sequence struct {
-	n chan uint64
-}
-
-func (s *Sequence) Init() {
-	s.n = make(chan uint64)
-	go s.gen()
-}
-
-func (s *Sequence) Close() {
-	close(s.n)
-}
-
-func (s *Sequence) gen() {
-	for i := uint64(1); ; i++ {
-		s.n <- i
-	}
-}
-
-func (s *Sequence) Next() uint64 {
-	return <-s.n
-}
-
 type FS struct {
-	seq Sequence
-	api *slack.Slack
-	ws  *slack.SlackWS
-	out chan slack.OutgoingMessage
-	in  chan slack.SlackEvent
+	super Super
+	api   *slack.Slack
+	ws    *slack.SlackWS
+	out   chan slack.OutgoingMessage
+	in    chan slack.SlackEvent
 
 	users map[string]*slack.User
 }
@@ -58,7 +36,7 @@ func NewFS(token string) (*FS, error) {
 		users: make(map[string]*slack.User),
 	}
 
-	fs.seq.Init()
+	fs.super.Init()
 
 	api.SetDebug(true)
 	go ws.HandleIncomingEvents(fs.in)
@@ -81,10 +59,6 @@ func NewFS(token string) (*FS, error) {
 	go fs.routeIncomingEvents()
 
 	return fs, nil
-}
-
-func (fs *FS) NextInodeNum() uint64 {
-	return fs.seq.Next()
 }
 
 func (fs *FS) initUsers(info *slack.Info) {
@@ -121,4 +95,53 @@ func (fs *FS) routeIncomingEvents() {
 			fmt.Printf("err: %s\n", ev)
 		}
 	}
+}
+
+var (
+	trueBytes  = []byte("true")
+	falseBytes = []byte("true")
+)
+
+func readUserId(ctx context.Context, n *Node) ([]byte, error) {
+	return []byte(n.priv.(*slack.User).Id), nil
+}
+
+func readUserName(ctx context.Context, n *Node) ([]byte, error) {
+	return []byte(n.priv.(*slack.User).Name), nil
+}
+
+func readUserPresence(ctx context.Context, n *Node) ([]byte, error) {
+	return []byte(n.priv.(*slack.User).Presence), nil
+}
+
+func readUserIsBot(ctx context.Context, n *Node) ([]byte, error) {
+	if n.priv.(*slack.User).IsBot {
+		return trueBytes, nil
+	} else {
+		return falseBytes, nil
+	}
+}
+
+var userAttrs = []AttrType{
+	{Name: "id", ReadAll: readUserId},
+	{Name: "name", ReadAll: readUserName},
+	{Name: "presence", ReadAll: readUserPresence},
+	{Name: "is_bot", ReadAll: readUserIsBot},
+}
+
+type UserDir struct {
+	n    Node
+	user *slack.User
+}
+
+func NewUserDir(u *slack.User) (*UserDir, error) {
+	ud := new(UserDir)
+	ud.user = u
+	ud.n.Init(ud)
+
+	// TODO(bp) init parent
+
+	ud.n.name = u.Id
+
+	return ud, nil
 }
