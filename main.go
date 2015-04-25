@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
 )
 
 const usage = `Usage: %s [OPTION...] MOUNTPOINT
@@ -65,6 +68,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	mountpoint := flag.Arg(0)
 
 	prof, err := NewProf(memProfile, cpuProfile)
 	if err != nil {
@@ -89,12 +93,33 @@ func main() {
 		}
 	}()
 
-	fs, err := NewFS(*token)
+	sfs, err := NewFS(*token)
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
 	}
 
-	_ = fs
+	c, err := fuse.Mount(
+		mountpoint,
+		fuse.FSName("slack"),
+		fuse.Subtype("slackfs"),
+		fuse.LocalVolume(),
+		fuse.VolumeName("Slack"),
+	)
+	if err != nil {
+		log.Fatalf("Mount(%s): %s", mountpoint, err)
+	}
+	defer c.Close()
+
+	err = fs.Serve(c, sfs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// check if the mount process has an error to report
+	<-c.Ready
+	if err := c.MountError; err != nil {
+		log.Fatal(err)
+	}
 
 	time.Sleep(120 * time.Second)
 	log.Printf("done done")

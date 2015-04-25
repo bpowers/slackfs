@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
+	
+	//"bazil.org/fuse"
+	"bazil.org/fuse/fs"
 )
 
 type Sequence struct {
@@ -24,6 +27,10 @@ func (s *Sequence) gen() {
 	for i := uint64(1); ; i++ {
 		s.n <- i
 	}
+}
+
+func (s *Sequence) Next() uint64 {
+	return <-s.n
 }
 
 type FS struct {
@@ -76,12 +83,25 @@ func NewFS(token string) (*FS, error) {
 	return fs, nil
 }
 
+func (fs *FS) NextInodeNum() uint64 {
+	return fs.seq.Next()
+}
+
 func (fs *FS) initUsers(info *slack.Info) {
 	for _, u := range info.Users {
 		up := new(slack.User)
 		*up = u
 		fs.users[u.Id] = up
 	}
+}
+
+func (fs *FS) GetUser(id string) (*slack.User, bool) {
+	u, ok := fs.users[id]
+	return u, ok
+}
+
+func (fs *FS) Root() (fs.Node, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (fs *FS) routeIncomingEvents() {
@@ -92,9 +112,8 @@ func (fs *FS) routeIncomingEvents() {
 		case *slack.MessageEvent:
 			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
 		case *slack.PresenceChangeEvent:
-			u := fs.users[ev.UserId]
 			name := "<unknown>"
-			if u != nil {
+			if u, ok := fs.users[ev.UserId]; ok {
 				name = u.Name
 			}
 			fmt.Printf("presence\t%s\t%s\n", name, ev.Presence)
