@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
 )
 
@@ -45,6 +47,14 @@ func (s *Super) NextInodeNum() uint64 {
 	return s.seq.Next()
 }
 
+func (s *Super) GetRoot() *DirNode {
+	return s.root
+}
+
+func (s *Super) Root() (fs.Node, error) {
+	return s.root, nil
+}
+
 type Node struct {
 	super  *Super
 	parent *DirNode
@@ -79,18 +89,34 @@ func (n *Node) Init(parent *DirNode, name string, priv interface{}) error {
 	return nil
 }
 
+func (n *Node) DirentType() fuse.DirentType {
+	switch {
+	case n.dir != nil && n.symlink == nil && n.attr == nil:
+		return fuse.DT_Dir
+	case n.dir == nil && n.symlink != nil && n.attr == nil:
+		return fuse.DT_Link
+	case n.dir == nil && n.symlink == nil && n.attr != nil:
+		return fuse.DT_File
+	default:
+		panic("inconsistent direnttype")
+	}
+}
+
+func (n *Node) IsDir() bool {
+	return n.dir != nil
+}
+
 // Activate exposes this Node in the filesystem
 func (n *Node) Activate() error {
 	if n.parent == nil {
 		return nil
 	}
 
-	n.parent.d.children = append(n.parent.d.children, n)
-
-	return nil
+	return n.parent.addChild(n)
 }
 
 type Dir struct {
+	childmap map[string]*Node
 	children []*Node
 }
 
@@ -116,6 +142,41 @@ type DirNode struct {
 	d Dir
 }
 
+func (dn *DirNode) addChild(child *Node) error {
+	dn.d.childmap[child.name] = child
+	dn.d.children = append(dn.d.children, child)
+	return nil
+}
+
+func (dn *DirNode) Lookup(ctx context.Context, name string) (fs.Node, error) {
+	if n, ok := dn.d.childmap[name]; ok {
+		return n, nil
+	} else {
+		return nil, fuse.ENOENT
+	}
+}
+
+func (dn *DirNode) Attr(a *fuse.Attr) {
+	a.Inode = dn.n.ino
+	a.Mode = dn.n.mode
+
+	// linkcount for dirs is 2 + n subdirs
+	a.Nlink = 2
+	for _, n := range dn.d.children {
+		if n.IsDir() {
+			a.Nlink++
+		}
+	}
+}
+
+func (dn *DirNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	dents := make([]fuse.Dirent, 0, len(dn.d.children))
+	for _, n := range dn.d.children {
+		dents = append(dents, fuse.Dirent{n.ino, n.DirentType(), n.name})
+	}
+	return dents, nil
+}
+
 type SymNode struct {
 	n Node
 	s Symlink
@@ -126,11 +187,12 @@ type AttrNode struct {
 	a Attr
 }
 
-func (s *Super) Root() *DirNode {
-	return s.root
+func (an *AttrNode) Attr(a *fuse.Attr) {
+	a.Inode = an.n.ino
+	a.Mode = an.n.mode
 }
 
-func NewSuper() (*Super) {
+func NewSuper() *Super {
 	super := new(Super)
 	super.Init()
 
@@ -142,6 +204,7 @@ func NewSuper() (*Super) {
 
 	// FIXME(bp) open coded from NewDirNode
 	root.n.dir = &root.d
+	root.d.childmap = make(map[string]*Node)
 	root.d.children = make([]*Node, 0)
 	root.n.mode = os.ModeDir | 0555
 
@@ -157,6 +220,7 @@ func NewDirNode(parent *DirNode, name string, priv interface{}) (*DirNode, error
 		return nil, fmt.Errorf("n.Init('%s', %#v): %s", name, priv, err)
 	}
 	dn.n.dir = &dn.d
+	dn.d.childmap = make(map[string]*Node)
 	dn.d.children = make([]*Node, 0)
 
 	dn.n.mode = os.ModeDir | 0555
@@ -181,5 +245,5 @@ func NewAttrNode(parent *DirNode, ty *AttrType, priv interface{}) (*AttrNode, er
 		an.n.mode |= 0222
 	}
 
-	return nil, nil
+	return an, nil
 }

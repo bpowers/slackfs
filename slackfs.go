@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
 
 	//"bazil.org/fuse"
-	"bazil.org/fuse/fs"
+	//"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
 )
 
@@ -18,7 +19,8 @@ type FS struct {
 	out   chan slack.OutgoingMessage
 	in    chan slack.SlackEvent
 
-	users map[string]*slack.User
+	users    map[string]*slack.User
+	userdirs map[string]*DirNode
 }
 
 func NewFS(token string) (*FS, error) {
@@ -29,11 +31,12 @@ func NewFS(token string) (*FS, error) {
 	}
 
 	fs := &FS{
-		api:   api,
-		ws:    ws,
-		out:   make(chan slack.OutgoingMessage),
-		in:    make(chan slack.SlackEvent),
-		users: make(map[string]*slack.User),
+		api:      api,
+		ws:       ws,
+		out:      make(chan slack.OutgoingMessage),
+		in:       make(chan slack.SlackEvent),
+		users:    make(map[string]*slack.User),
+		userdirs: make(map[string]*DirNode),
 	}
 
 	fs.super = NewSuper()
@@ -51,8 +54,10 @@ func NewFS(token string) (*FS, error) {
 		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
 	}
 
-	fs.initUsers(&info)
-
+	err = fs.initUsers(&info)
+	if err != nil {
+		return nil, fmt.Errorf("initUsers: %s", err)
+	}
 	// create root inode
 	// create users, chans, dms inodes
 
@@ -61,21 +66,24 @@ func NewFS(token string) (*FS, error) {
 	return fs, nil
 }
 
-func (fs *FS) initUsers(info *slack.Info) {
+func (fs *FS) initUsers(info *slack.Info) error {
+	root := fs.super.GetRoot()
 	for _, u := range info.Users {
 		up := new(slack.User)
 		*up = u
 		fs.users[u.Id] = up
+		ud, err := NewUserDir(root, up)
+		if err != nil {
+			return fmt.Errorf("NewUserDir(%s): %s", up.Id, err)
+		}
+		fs.userdirs[u.Id] = ud
 	}
+	return nil
 }
 
 func (fs *FS) GetUser(id string) (*slack.User, bool) {
 	u, ok := fs.users[id]
 	return u, ok
-}
-
-func (fs *FS) Root() (fs.Node, error) {
-	return nil, fmt.Errorf("not implemented")
 }
 
 func (fs *FS) routeIncomingEvents() {
@@ -143,6 +151,7 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 		an.n.Activate()
 	}
 
+	log.Printf("dn: %#v", dn)
 	dn.n.Activate()
 
 	return dn, nil

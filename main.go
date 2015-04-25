@@ -110,7 +110,7 @@ func main() {
 	}
 	defer c.Close()
 
-	err = fs.Serve(c, sfs)
+	err = fs.Serve(c, sfs.super)
 	if err != nil {
 		log.Fatal(err)
 	}
