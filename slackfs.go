@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
@@ -148,11 +147,10 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &ua, err)
 		}
-		an.n.Activate()
+		an.Activate()
 	}
 
-	log.Printf("dn: %#v", dn)
-	dn.n.Activate()
+	dn.Activate()
 
 	return dn, nil
 }

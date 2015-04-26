@@ -63,12 +63,16 @@ type Node struct {
 	// usually a link back to the struct embedding this node
 	priv interface{}
 
-	dir     *Dir
-	symlink *Symlink
-	attr    *Attr
-
 	ino  uint64
 	mode os.FileMode
+}
+
+func (n *Node) Dirent() fuse.Dirent {
+	return fuse.Dirent{n.ino, 0, n.name}
+}
+
+func (n *Node) Name() string {
+	return n.name
 }
 
 func (n *Node) Init(parent *DirNode, name string, priv interface{}) error {
@@ -78,51 +82,72 @@ func (n *Node) Init(parent *DirNode, name string, priv interface{}) error {
 	if name == "" {
 		return fmt.Errorf("empty name")
 	}
-	n.super = parent.n.super
+	n.super = parent.super
 	n.parent = parent
 	n.name = name
 
 	n.priv = priv
 
-	n.ino = parent.n.super.NextInodeNum()
+	n.ino = parent.super.NextInodeNum()
 
 	return nil
 }
 
-func (n *Node) DirentType() fuse.DirentType {
-	switch {
-	case n.dir != nil && n.symlink == nil && n.attr == nil:
-		return fuse.DT_Dir
-	case n.dir == nil && n.symlink != nil && n.attr == nil:
-		return fuse.DT_Link
-	case n.dir == nil && n.symlink == nil && n.attr != nil:
-		return fuse.DT_File
-	default:
-		panic("inconsistent direnttype")
-	}
+func (dn *DirNode) DirentType() fuse.DirentType {
+	return fuse.DT_Dir
 }
 
-func (n *Node) IsDir() bool {
-	return n.dir != nil
+func (sn *SymlinkNode) DirentType() fuse.DirentType {
+	return fuse.DT_Link
 }
 
-// Activate exposes this Node in the filesystem
-func (n *Node) Activate() error {
-	if n.parent == nil {
+func (an *AttrNode) DirentType() fuse.DirentType {
+	return fuse.DT_File
+}
+
+type INode interface {
+	fs.Node
+	Dirent() fuse.Dirent
+	DirentType() fuse.DirentType
+	IsDir() bool
+	Activate() error
+	Name() string
+}
+
+func (dn *DirNode) IsDir() bool {
+	return true
+}
+
+func (sn *SymlinkNode) IsDir() bool {
+	return false
+}
+
+func (an *AttrNode) IsDir() bool {
+	return false
+}
+
+func (dn *DirNode) Activate() error {
+	if dn.parent == nil {
 		return nil
 	}
 
-	return n.parent.addChild(n)
+	return dn.parent.addChild(dn)
 }
 
-type Dir struct {
-	childmap map[string]*Node
-	children []*Node
+func (sn *SymlinkNode) Activate() error {
+	if sn.parent == nil {
+		return nil
+	}
+
+	return sn.parent.addChild(sn)
 }
 
-type Symlink struct {
-	path   string
-	target *Node
+func (an *AttrNode) Activate() error {
+	if an.parent == nil {
+		return nil
+	}
+
+	return an.parent.addChild(an)
 }
 
 type AttrType struct {
@@ -133,23 +158,20 @@ type AttrType struct {
 	Write   func(context.Context, *Node, []byte) error
 }
 
-type Attr struct {
-	ty *AttrType
-}
-
 type DirNode struct {
-	n Node
-	d Dir
+	Node
+	childmap map[string]INode
+	children []INode
 }
 
-func (dn *DirNode) addChild(child *Node) error {
-	dn.d.childmap[child.name] = child
-	dn.d.children = append(dn.d.children, child)
+func (dn *DirNode) addChild(child INode) error {
+	dn.childmap[child.Name()] = child
+	dn.children = append(dn.children, child)
 	return nil
 }
 
 func (dn *DirNode) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	if n, ok := dn.d.childmap[name]; ok {
+	if n, ok := dn.childmap[name]; ok {
 		return n, nil
 	} else {
 		return nil, fuse.ENOENT
@@ -157,12 +179,12 @@ func (dn *DirNode) Lookup(ctx context.Context, name string) (fs.Node, error) {
 }
 
 func (dn *DirNode) Attr(a *fuse.Attr) {
-	a.Inode = dn.n.ino
-	a.Mode = dn.n.mode
+	a.Inode = dn.ino
+	a.Mode = dn.mode
 
 	// linkcount for dirs is 2 + n subdirs
 	a.Nlink = 2
-	for _, n := range dn.d.children {
+	for _, n := range dn.children {
 		if n.IsDir() {
 			a.Nlink++
 		}
@@ -170,26 +192,34 @@ func (dn *DirNode) Attr(a *fuse.Attr) {
 }
 
 func (dn *DirNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	dents := make([]fuse.Dirent, 0, len(dn.d.children))
-	for _, n := range dn.d.children {
-		dents = append(dents, fuse.Dirent{n.ino, n.DirentType(), n.name})
+	dents := make([]fuse.Dirent, 0, len(dn.children))
+	for _, child := range dn.children {
+		dent := child.Dirent()
+		dent.Type = child.DirentType()
+		dents = append(dents, child.Dirent())
 	}
 	return dents, nil
 }
 
-type SymNode struct {
-	n Node
-	s Symlink
+type SymlinkNode struct {
+	Node
+	path   string
+	target *Node
+}
+
+func (sn *SymlinkNode) Attr(a *fuse.Attr) {
+	a.Inode = sn.ino
+	a.Mode = os.ModeSymlink | sn.mode
 }
 
 type AttrNode struct {
-	n Node
-	a Attr
+	Node
+	ty *AttrType
 }
 
 func (an *AttrNode) Attr(a *fuse.Attr) {
-	a.Inode = an.n.ino
-	a.Mode = an.n.mode
+	a.Inode = an.ino
+	a.Mode = an.mode
 }
 
 func NewSuper() *Super {
@@ -199,14 +229,13 @@ func NewSuper() *Super {
 	root := new(DirNode)
 
 	// FIXME(bp) open coded from Node.Init
-	root.n.super = super
-	root.n.ino = super.NextInodeNum()
+	root.super = super
+	root.ino = super.NextInodeNum()
 
 	// FIXME(bp) open coded from NewDirNode
-	root.n.dir = &root.d
-	root.d.childmap = make(map[string]*Node)
-	root.d.children = make([]*Node, 0)
-	root.n.mode = os.ModeDir | 0555
+	root.childmap = make(map[string]INode)
+	root.children = make([]INode, 0, 8)
+	root.mode = os.ModeDir | 0555
 
 	super.root = root
 
@@ -215,15 +244,14 @@ func NewSuper() *Super {
 
 func NewDirNode(parent *DirNode, name string, priv interface{}) (*DirNode, error) {
 	dn := new(DirNode)
-	err := dn.n.Init(parent, name, priv)
+	err := dn.Node.Init(parent, name, priv)
 	if err != nil {
 		return nil, fmt.Errorf("n.Init('%s', %#v): %s", name, priv, err)
 	}
-	dn.n.dir = &dn.d
-	dn.d.childmap = make(map[string]*Node)
-	dn.d.children = make([]*Node, 0)
+	dn.childmap = make(map[string]INode)
+	dn.children = make([]INode, 0)
 
-	dn.n.mode = os.ModeDir | 0555
+	dn.mode = os.ModeDir | 0555
 
 	return dn, nil
 }
@@ -231,18 +259,17 @@ func NewDirNode(parent *DirNode, name string, priv interface{}) (*DirNode, error
 func NewAttrNode(parent *DirNode, ty *AttrType, priv interface{}) (*AttrNode, error) {
 	name := ty.Name
 	an := new(AttrNode)
-	err := an.n.Init(parent, name, priv)
+	err := an.Node.Init(parent, name, priv)
 	if err != nil {
 		return nil, fmt.Errorf("n.Init('%s', %#v): %s", name, priv, err)
 	}
-	an.n.attr = &an.a
-	an.a.ty = ty
+	an.ty = ty
 
 	if ty.ReadAll != nil {
-		an.n.mode |= 0444
+		an.mode |= 0444
 	}
 	if ty.Write != nil {
-		an.n.mode |= 0222
+		an.mode |= 0222
 	}
 
 	return an, nil
