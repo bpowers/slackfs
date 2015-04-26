@@ -154,8 +154,9 @@ type AttrType struct {
 	// used when Node.name is empty
 	Name string
 
-	ReadAll func(context.Context, *Node) ([]byte, error)
-	Write   func(context.Context, *Node, []byte) error
+	ReadLen func(*AttrNode) int
+	ReadAll func(context.Context, *AttrNode) ([]byte, error)
+	Write   func(context.Context, *AttrNode, []byte) error
 }
 
 type DirNode struct {
@@ -220,6 +221,17 @@ type AttrNode struct {
 func (an *AttrNode) Attr(a *fuse.Attr) {
 	a.Inode = an.ino
 	a.Mode = an.mode
+	if an.ty.ReadLen != nil {
+		a.Size = uint64(an.ty.ReadLen(an))
+	}
+}
+
+func (an *AttrNode) ReadAll(ctx context.Context) ([]byte, error) {
+	if an.ty.ReadAll == nil {
+		return nil, fuse.ENOSYS
+	}
+
+	return an.ty.ReadAll(ctx, an)
 }
 
 func NewSuper() *Super {
