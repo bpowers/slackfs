@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
@@ -61,6 +63,46 @@ func NewFS(token string) (*FS, error) {
 	// create users, chans, dms inodes
 
 	go fs.routeIncomingEvents()
+
+	return fs, nil
+}
+
+func NewOfflineFS(infoPath string) (*FS, error) {
+	var info slack.Info
+
+	buf, err := ioutil.ReadFile(infoPath)
+	if err != nil {
+		return nil, fmt.Errorf("ReadFile(%s): %s", infoPath, err)
+	}
+	err = json.Unmarshal(buf, &info)
+	if err != nil {
+		return nil, fmt.Errorf("Unmarshal: %s", err)
+	}
+
+	fs := &FS{
+		out:      make(chan slack.OutgoingMessage),
+		in:       make(chan slack.SlackEvent),
+		users:    make(map[string]*slack.User),
+		userdirs: make(map[string]*DirNode),
+	}
+
+	fs.super = NewSuper()
+
+	for _, c := range info.Channels {
+		if !c.IsMember {
+			continue
+		}
+		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
+	}
+
+	err = fs.initUsers(&info)
+	if err != nil {
+		return nil, fmt.Errorf("initUsers: %s", err)
+	}
+	// create root inode
+	// create users, chans, dms inodes
+
+	//go fs.routeIncomingEvents()
 
 	return fs, nil
 }

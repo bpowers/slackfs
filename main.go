@@ -58,6 +58,8 @@ func main() {
 		"write memory profile to this file")
 	flag.StringVar(&cpuProfile, "cpuprofile", "",
 		"write cpu profile to this file")
+	offline := flag.String("offline", "",
+		"specified JSON info response file to use offline")
 	token := flag.String("token", "", "Slack API token")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
@@ -93,7 +95,13 @@ func main() {
 		}
 	}()
 
-	sfs, err := NewFS(*token)
+	var sfs *FS
+	if *offline != "" {
+		log.Printf("offline mode")
+		sfs, err = NewOfflineFS(*offline)
+	} else {
+		sfs, err = NewFS(*token)
+	}
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
 	}
