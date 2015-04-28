@@ -16,6 +16,9 @@ run: unmount build
 run-offline: unmount build
 	./slackfs -offline info.json -token $(TOKEN) $(MNT)
 
+update-offline-info:
+	curl "https://slack.com/api/rtm.start?token=$(TOKEN)" | pretty >info.json
+
 count:
 	cat /tmp/slack/**/presence | sort | uniq -c
 
