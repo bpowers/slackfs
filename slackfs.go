@@ -24,6 +24,10 @@ type FS struct {
 	users        map[string]*slack.User
 	userDirs     map[string]*DirNode
 	userNameSyms map[string]*SymlinkNode
+
+	channels        map[string]*slack.Channel
+	channelDirs     map[string]*DirNode
+	channelNameSyms map[string]*SymlinkNode
 }
 
 func NewFS(token string) (*FS, error) {
@@ -36,14 +40,17 @@ func NewFS(token string) (*FS, error) {
 	info := api.GetInfo()
 
 	fs := &FS{
-		api:          api,
-		ws:           ws,
-		out:          make(chan slack.OutgoingMessage),
-		in:           make(chan slack.SlackEvent),
-		info:         &info,
-		users:        make(map[string]*slack.User),
-		userDirs:     make(map[string]*DirNode),
-		userNameSyms: make(map[string]*SymlinkNode),
+		api:             api,
+		ws:              ws,
+		out:             make(chan slack.OutgoingMessage),
+		in:              make(chan slack.SlackEvent),
+		info:            &info,
+		users:           make(map[string]*slack.User),
+		userDirs:        make(map[string]*DirNode),
+		userNameSyms:    make(map[string]*SymlinkNode),
+		channels:        make(map[string]*slack.Channel),
+		channelDirs:     make(map[string]*DirNode),
+		channelNameSyms: make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -81,12 +88,15 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 	}
 
 	fs := &FS{
-		out:          make(chan slack.OutgoingMessage),
-		in:           make(chan slack.SlackEvent),
-		info:         &info,
-		users:        make(map[string]*slack.User),
-		userDirs:     make(map[string]*DirNode),
-		userNameSyms: make(map[string]*SymlinkNode),
+		out:             make(chan slack.OutgoingMessage),
+		in:              make(chan slack.SlackEvent),
+		info:            &info,
+		users:           make(map[string]*slack.User),
+		userDirs:        make(map[string]*DirNode),
+		userNameSyms:    make(map[string]*SymlinkNode),
+		channels:        make(map[string]*slack.Channel),
+		channelDirs:     make(map[string]*DirNode),
+		channelNameSyms: make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -109,17 +119,22 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 }
 
 func (fs *FS) init() error {
-	err := fs.initUsers(fs.info)
+	root := fs.super.GetRoot()
+
+	err := fs.initUsers(root)
 	if err != nil {
 		return fmt.Errorf("initUsers: %s", err)
+	}
+	err = fs.initChannels(root)
+	if err != nil {
+		return fmt.Errorf("initChannels: %s", err)
 	}
 
 	return nil
 }
 
-func (fs *FS) initUsers(info *slack.Info) error {
-	root := fs.super.GetRoot()
-	users, err := NewDirNode(root, "users", fs)
+func (fs *FS) initUsers(parent *DirNode) error {
+	users, err := NewDirNode(parent, "users", fs)
 	if err != nil {
 		return fmt.Errorf("NewDirNode(users): %s", err)
 	}
@@ -132,7 +147,7 @@ func (fs *FS) initUsers(info *slack.Info) error {
 		return fmt.Errorf("NewDirNode(by-id): %s", err)
 	}
 
-	for _, u := range info.Users {
+	for _, u := range fs.info.Users {
 		up := new(slack.User)
 		*up = u
 		fs.users[u.Id] = up
@@ -151,6 +166,42 @@ func (fs *FS) initUsers(info *slack.Info) error {
 	byId.Activate()
 	byName.Activate()
 	users.Activate()
+	return nil
+}
+
+func (fs *FS) initChannels(parent *DirNode) error {
+	channels, err := NewDirNode(parent, "channels", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(channels): %s", err)
+	}
+	byName, err := NewDirNode(channels, "by-name", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-name): %s", err)
+	}
+	byId, err := NewDirNode(channels, "by-id", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-id): %s", err)
+	}
+
+	for _, ch := range fs.info.Channels {
+		chp := new(slack.Channel)
+		*chp = ch
+		fs.channels[ch.Id] = chp
+		chd, err := NewChannelDir(byId, chp)
+		if err != nil {
+			return fmt.Errorf("NewChannelDir(%s): %s", ch.Id, err)
+		}
+		fs.channelDirs[ch.Id] = chd
+		chs, err := NewSymlinkNode(byName, ch.Name, "../by-id/"+ch.Id, chd)
+		if err != nil {
+			return fmt.Errorf("NewSymlinkNode(%s): %s", ch.Name, err)
+		}
+		fs.channelNameSyms[ch.Name] = chs
+		chs.Activate()
+	}
+	byId.Activate()
+	byName.Activate()
+	channels.Activate()
 	return nil
 }
 
@@ -247,4 +298,20 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 	dn.Activate()
 
 	return dn, nil
+}
+
+func NewChannelDir(parent *DirNode, ch *slack.Channel) (*DirNode, error) {
+	chn, err := NewDirNode(parent, ch.Id, ch)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode: %s", err)
+	}
+
+	// write FIFO
+	// write.md FIFO
+
+	// session file
+
+	chn.Activate()
+
+	return chn, nil
 }
