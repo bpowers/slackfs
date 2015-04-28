@@ -20,33 +20,6 @@ Slack as a filesystem.
 Options:
 `
 
-/*
-
-/ctl
-/users/by-id/$ID
-/users/by-email/$EMAIL -> ../by-id/$ID
-/users/by-name/$NAME -> ../by-id/$ID
-
-/dm/
-/dm/ctl
-/dm/$NAME/ctl
-/dm/$NAME/user -> ../../users/by-id/$ID
-/dm/$NAME/history
-/dm/$NAME/session
-/dm/$NAME/send
-
-/channel/
-/channel/ctl
-/channel/general/
-/channel/general/ctl
-/channel/general/members/
-/channel/general/members/user -> ../../users/by-id/$ID
-/channel/general/history
-/channel/general/session
-/channel/general/send
-
-*/
-
 func debug(msg interface{}) {
 	log.Printf("%s", msg)
 }
@@ -110,6 +83,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
 	}
+
+	log.Printf("ws: %#v", sfs.ws)
 
 	c, err := fuse.Mount(
 		mountpoint,

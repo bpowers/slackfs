@@ -153,10 +153,11 @@ func (an *AttrNode) Activate() error {
 type AttrType struct {
 	// used when Node.name is empty
 	Name string
+	Mode os.FileMode
 
 	ReadLen func(*AttrNode) int
 	ReadAll func(context.Context, *AttrNode) ([]byte, error)
-	Write   func(context.Context, *AttrNode, []byte) error
+	Write   func(context.Context, *AttrNode, int64, []byte) error
 }
 
 type DirNode struct {
@@ -238,6 +239,18 @@ func (an *AttrNode) ReadAll(ctx context.Context) ([]byte, error) {
 	return an.ty.ReadAll(ctx, an)
 }
 
+func (an *AttrNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	if an.ty.Write == nil {
+		return fuse.ENOSYS
+	}
+
+	err := an.ty.Write(ctx, an, req.Offset, req.Data)
+	if err == nil {
+		resp.Size = len(req.Data)
+	}
+	return err
+}
+
 func NewSuper() *Super {
 	super := new(Super)
 	super.Init()
@@ -294,6 +307,7 @@ func NewAttrNode(parent *DirNode, ty *AttrType, priv interface{}) (*AttrNode, er
 		return nil, fmt.Errorf("n.Init('%s', %#v): %s", name, priv, err)
 	}
 	an.ty = ty
+	an.mode = ty.Mode
 
 	if ty.ReadAll != nil {
 		an.mode |= 0444

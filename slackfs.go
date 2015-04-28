@@ -4,14 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"strings"
 	"time"
 
 	"slackfs/internal/github.com/nlopes/slack"
 
-	//"bazil.org/fuse"
+	"bazil.org/fuse"
 	//"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
 )
+
+type Channel struct {
+	slack.Channel
+	fs *FS
+}
 
 type FS struct {
 	super *Super
@@ -25,7 +32,7 @@ type FS struct {
 	userDirs     map[string]*DirNode
 	userNameSyms map[string]*SymlinkNode
 
-	channels        map[string]*slack.Channel
+	channels        map[string]*Channel
 	channelDirs     map[string]*DirNode
 	channelNameSyms map[string]*SymlinkNode
 }
@@ -48,7 +55,7 @@ func NewFS(token string) (*FS, error) {
 		users:           make(map[string]*slack.User),
 		userDirs:        make(map[string]*DirNode),
 		userNameSyms:    make(map[string]*SymlinkNode),
-		channels:        make(map[string]*slack.Channel),
+		channels:        make(map[string]*Channel),
 		channelDirs:     make(map[string]*DirNode),
 		channelNameSyms: make(map[string]*SymlinkNode),
 	}
@@ -94,7 +101,7 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 		users:           make(map[string]*slack.User),
 		userDirs:        make(map[string]*DirNode),
 		userNameSyms:    make(map[string]*SymlinkNode),
-		channels:        make(map[string]*slack.Channel),
+		channels:        make(map[string]*Channel),
 		channelDirs:     make(map[string]*DirNode),
 		channelNameSyms: make(map[string]*SymlinkNode),
 	}
@@ -184,8 +191,13 @@ func (fs *FS) initChannels(parent *DirNode) error {
 	}
 
 	for _, ch := range fs.info.Channels {
-		chp := new(slack.Channel)
-		*chp = ch
+		if !ch.IsMember {
+			continue
+		}
+
+		chp := new(Channel)
+		chp.Channel = ch
+		chp.fs = fs
 		fs.channels[ch.Id] = chp
 		chd, err := NewChannelDir(byId, chp)
 		if err != nil {
@@ -216,7 +228,7 @@ func (fs *FS) routeIncomingEvents() {
 
 		switch ev := msg.Data.(type) {
 		case *slack.MessageEvent:
-			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
+			fmt.Printf("msg\t%s\t%s\t%s\t(%#v)\n", ev.Timestamp, ev.UserId, ev.Text, ev)
 		case *slack.PresenceChangeEvent:
 			name := "<unknown>"
 			if u, ok := fs.users[ev.UserId]; ok {
@@ -300,14 +312,57 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 	return dn, nil
 }
 
-func NewChannelDir(parent *DirNode, ch *slack.Channel) (*DirNode, error) {
+func writeChanCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) error {
+	log.Printf("ctl: %s", string(msg))
+	return nil
+}
+
+func writeChanWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) error {
+	ch, ok := n.priv.(*Channel)
+	if !ok {
+		log.Printf("priv is not chan")
+		return fuse.ENOSYS
+	}
+
+	fs := ch.fs
+	if fs == nil || fs.ws == nil {
+		log.Printf("chan doesn't have fs? %#v", fs)
+		return fuse.ENOSYS
+	}
+
+	txt := strings.TrimSpace(string(msg))
+
+	out := fs.ws.NewOutgoingMessage(txt, ch.Id)
+	err := fs.ws.SendMessage(out)
+	if err != nil {
+		log.Printf("SendMessage: %s", err)
+	}
+	// TODO(bp) add this message to the session buffer, after we
+	// get an ok
+	return err
+}
+
+// TODO(bp) conceptually these would be better as FIFOs, but when mode
+// has os.NamedPipe the writer (bash) hangs on an open() that we never
+// get a fuse request for.
+var chanAttrs = []AttrType{
+	{Name: "ctl", Write: writeChanCtl},
+	{Name: "write", Write: writeChanWrite},
+}
+
+func NewChannelDir(parent *DirNode, ch *Channel) (*DirNode, error) {
 	chn, err := NewDirNode(parent, ch.Id, ch)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	// write FIFO
-	// write.md FIFO
+	for i, _ := range chanAttrs {
+		an, err := NewAttrNode(chn, &chanAttrs[i], ch)
+		if err != nil {
+			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &chanAttrs[i], err)
+		}
+		an.Activate()
+	}
 
 	// session file
 
