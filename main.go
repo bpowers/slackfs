@@ -47,8 +47,13 @@ Options:
 
 */
 
+func debug(msg interface{}) {
+	log.Printf("%s", msg)
+}
+
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	fuse.Debug = debug
 }
 
 var memProfile, cpuProfile string

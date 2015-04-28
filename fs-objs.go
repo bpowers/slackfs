@@ -205,12 +205,16 @@ func (dn *DirNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 type SymlinkNode struct {
 	Node
 	path   string
-	target *Node
+	target INode
 }
 
 func (sn *SymlinkNode) Attr(a *fuse.Attr) {
 	a.Inode = sn.ino
 	a.Mode = os.ModeSymlink | sn.mode
+}
+
+func (sn *SymlinkNode) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
+	return sn.path, nil
 }
 
 type AttrNode struct {
@@ -266,6 +270,20 @@ func NewDirNode(parent *DirNode, name string, priv interface{}) (*DirNode, error
 	dn.mode = os.ModeDir | 0555
 
 	return dn, nil
+}
+
+func NewSymlinkNode(parent *DirNode, name string, targetPath string, target INode) (*SymlinkNode, error) {
+	sn := new(SymlinkNode)
+	err := sn.Node.Init(parent, name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("n.Init('%s'): %s", name, err)
+	}
+	sn.path = targetPath
+	sn.target = target
+
+	sn.mode = os.ModeSymlink | 0777
+
+	return sn, nil
 }
 
 func NewAttrNode(parent *DirNode, ty *AttrType, priv interface{}) (*AttrNode, error) {

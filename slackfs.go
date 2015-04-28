@@ -20,8 +20,9 @@ type FS struct {
 	out   chan slack.OutgoingMessage
 	in    chan slack.SlackEvent
 
-	users    map[string]*slack.User
-	userdirs map[string]*DirNode
+	users        map[string]*slack.User
+	userDirs     map[string]*DirNode
+	userNameSyms map[string]*SymlinkNode
 }
 
 func NewFS(token string) (*FS, error) {
@@ -32,12 +33,13 @@ func NewFS(token string) (*FS, error) {
 	}
 
 	fs := &FS{
-		api:      api,
-		ws:       ws,
-		out:      make(chan slack.OutgoingMessage),
-		in:       make(chan slack.SlackEvent),
-		users:    make(map[string]*slack.User),
-		userdirs: make(map[string]*DirNode),
+		api:          api,
+		ws:           ws,
+		out:          make(chan slack.OutgoingMessage),
+		in:           make(chan slack.SlackEvent),
+		users:        make(map[string]*slack.User),
+		userDirs:     make(map[string]*DirNode),
+		userNameSyms: make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -80,10 +82,11 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 	}
 
 	fs := &FS{
-		out:      make(chan slack.OutgoingMessage),
-		in:       make(chan slack.SlackEvent),
-		users:    make(map[string]*slack.User),
-		userdirs: make(map[string]*DirNode),
+		out:          make(chan slack.OutgoingMessage),
+		in:           make(chan slack.SlackEvent),
+		users:        make(map[string]*slack.User),
+		userDirs:     make(map[string]*DirNode),
+		userNameSyms: make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -109,16 +112,38 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 
 func (fs *FS) initUsers(info *slack.Info) error {
 	root := fs.super.GetRoot()
+	users, err := NewDirNode(root, "users", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(users): %s", err)
+	}
+	byName, err := NewDirNode(users, "by-name", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-name): %s", err)
+	}
+	byId, err := NewDirNode(users, "by-id", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-id): %s", err)
+	}
+
 	for _, u := range info.Users {
 		up := new(slack.User)
 		*up = u
 		fs.users[u.Id] = up
-		ud, err := NewUserDir(root, up)
+		ud, err := NewUserDir(byId, up)
 		if err != nil {
 			return fmt.Errorf("NewUserDir(%s): %s", up.Id, err)
 		}
-		fs.userdirs[u.Id] = ud
+		fs.userDirs[u.Id] = ud
+		us, err := NewSymlinkNode(byName, u.Name, "../by-id/"+u.Id, ud)
+		if err != nil {
+			return fmt.Errorf("NewSymlinkNode(%s): %s", up.Name, err)
+		}
+		fs.userNameSyms[u.Name] = us
+		us.Activate()
 	}
+	byId.Activate()
+	byName.Activate()
+	users.Activate()
 	return nil
 }
 
