@@ -19,6 +19,7 @@ type FS struct {
 	ws    *slack.SlackWS
 	out   chan slack.OutgoingMessage
 	in    chan slack.SlackEvent
+	info  *slack.Info
 
 	users        map[string]*slack.User
 	userDirs     map[string]*DirNode
@@ -32,11 +33,14 @@ func NewFS(token string) (*FS, error) {
 		return nil, fmt.Errorf("StartRTM(): %s\n", err)
 	}
 
+	info := api.GetInfo()
+
 	fs := &FS{
 		api:          api,
 		ws:           ws,
 		out:          make(chan slack.OutgoingMessage),
 		in:           make(chan slack.SlackEvent),
+		info:         &info,
 		users:        make(map[string]*slack.User),
 		userDirs:     make(map[string]*DirNode),
 		userNameSyms: make(map[string]*SymlinkNode),
@@ -48,21 +52,17 @@ func NewFS(token string) (*FS, error) {
 	go ws.HandleIncomingEvents(fs.in)
 	go ws.Keepalive(10 * time.Second)
 
-	info := api.GetInfo()
-
-	for _, c := range info.Channels {
+	for _, c := range fs.info.Channels {
 		if !c.IsMember {
 			continue
 		}
 		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
 	}
 
-	err = fs.initUsers(&info)
+	err = fs.init()
 	if err != nil {
-		return nil, fmt.Errorf("initUsers: %s", err)
+		return nil, fmt.Errorf("init: %s", err)
 	}
-	// create root inode
-	// create users, chans, dms inodes
 
 	go fs.routeIncomingEvents()
 
@@ -70,12 +70,11 @@ func NewFS(token string) (*FS, error) {
 }
 
 func NewOfflineFS(infoPath string) (*FS, error) {
-	var info slack.Info
-
 	buf, err := ioutil.ReadFile(infoPath)
 	if err != nil {
 		return nil, fmt.Errorf("ReadFile(%s): %s", infoPath, err)
 	}
+	var info slack.Info
 	err = json.Unmarshal(buf, &info)
 	if err != nil {
 		return nil, fmt.Errorf("Unmarshal: %s", err)
@@ -84,6 +83,7 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 	fs := &FS{
 		out:          make(chan slack.OutgoingMessage),
 		in:           make(chan slack.SlackEvent),
+		info:         &info,
 		users:        make(map[string]*slack.User),
 		userDirs:     make(map[string]*DirNode),
 		userNameSyms: make(map[string]*SymlinkNode),
@@ -98,16 +98,23 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
 	}
 
-	err = fs.initUsers(&info)
+	err = fs.init()
 	if err != nil {
-		return nil, fmt.Errorf("initUsers: %s", err)
+		return nil, fmt.Errorf("init: %s", err)
 	}
-	// create root inode
-	// create users, chans, dms inodes
 
 	//go fs.routeIncomingEvents()
 
 	return fs, nil
+}
+
+func (fs *FS) init() error {
+	err := fs.initUsers(fs.info)
+	if err != nil {
+		return fmt.Errorf("initUsers: %s", err)
+	}
+
+	return nil
 }
 
 func (fs *FS) initUsers(info *slack.Info) error {
