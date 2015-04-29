@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"slackfs/internal/github.com/nlopes/slack"
+	"github.com/nlopes/slack"
 
 	"bazil.org/fuse"
 	//"bazil.org/fuse/fs"
@@ -17,6 +17,11 @@ import (
 
 type Channel struct {
 	slack.Channel
+	fs *FS
+}
+
+type Group struct {
+	slack.Group
 	fs *FS
 }
 
@@ -35,6 +40,10 @@ type FS struct {
 	channels        map[string]*Channel
 	channelDirs     map[string]*DirNode
 	channelNameSyms map[string]*SymlinkNode
+
+	groups        map[string]*Group
+	groupDirs     map[string]*DirNode
+	groupNameSyms map[string]*SymlinkNode
 }
 
 func NewFS(token string) (*FS, error) {
@@ -58,6 +67,9 @@ func NewFS(token string) (*FS, error) {
 		channels:        make(map[string]*Channel),
 		channelDirs:     make(map[string]*DirNode),
 		channelNameSyms: make(map[string]*SymlinkNode),
+		groups:          make(map[string]*Group),
+		groupDirs:       make(map[string]*DirNode),
+		groupNameSyms:   make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -104,6 +116,9 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 		channels:        make(map[string]*Channel),
 		channelDirs:     make(map[string]*DirNode),
 		channelNameSyms: make(map[string]*SymlinkNode),
+		groups:          make(map[string]*Group),
+		groupDirs:       make(map[string]*DirNode),
+		groupNameSyms:   make(map[string]*SymlinkNode),
 	}
 
 	fs.super = NewSuper()
@@ -133,6 +148,10 @@ func (fs *FS) init() error {
 		return fmt.Errorf("initUsers: %s", err)
 	}
 	err = fs.initChannels(root)
+	if err != nil {
+		return fmt.Errorf("initChannels: %s", err)
+	}
+	err = fs.initGroups(root)
 	if err != nil {
 		return fmt.Errorf("initChannels: %s", err)
 	}
@@ -214,6 +233,43 @@ func (fs *FS) initChannels(parent *DirNode) error {
 	byId.Activate()
 	byName.Activate()
 	channels.Activate()
+	return nil
+}
+
+func (fs *FS) initGroups(parent *DirNode) error {
+	groups, err := NewDirNode(parent, "private-groups", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(groups): %s", err)
+	}
+	byName, err := NewDirNode(groups, "by-name", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-name): %s", err)
+	}
+	byId, err := NewDirNode(groups, "by-id", fs)
+	if err != nil {
+		return fmt.Errorf("NewDirNode(by-id): %s", err)
+	}
+
+	for _, g := range fs.info.Groups {
+		gp := new(Group)
+		gp.Group = g
+		gp.fs = fs
+		fs.groups[g.Id] = gp
+		gd, err := NewGroupDir(byId, gp)
+		if err != nil {
+			return fmt.Errorf("NewGroupDir(%s): %s", g.Id, err)
+		}
+		fs.groupDirs[g.Id] = gd
+		gs, err := NewSymlinkNode(byName, g.Name, "../by-id/"+g.Id, gd)
+		if err != nil {
+			return fmt.Errorf("NewSymlinkNode(%s): %s", g.Name, err)
+		}
+		fs.groupNameSyms[g.Name] = gs
+		gs.Activate()
+	}
+	byId.Activate()
+	byName.Activate()
+	groups.Activate()
 	return nil
 }
 
@@ -312,6 +368,19 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 	return dn, nil
 }
 
+func (fs *FS) Send(txtBytes []byte, id string) error {
+	txt := strings.TrimSpace(string(txtBytes))
+
+	out := fs.ws.NewOutgoingMessage(txt, id)
+	err := fs.ws.SendMessage(out)
+	if err != nil {
+		log.Printf("SendMessage: %s", err)
+	}
+	// TODO(bp) add this message to the session buffer, after we
+	// get an ok
+	return err
+}
+
 func writeChanCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) error {
 	log.Printf("ctl: %s", string(msg))
 	return nil
@@ -324,22 +393,22 @@ func writeChanWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) err
 		return fuse.ENOSYS
 	}
 
-	fs := ch.fs
-	if fs == nil || fs.ws == nil {
-		log.Printf("chan doesn't have fs? %#v", fs)
+	return ch.fs.Send(msg, ch.Id)
+}
+
+func writeGroupCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) error {
+	log.Printf("ctl: %s", string(msg))
+	return nil
+}
+
+func writeGroupWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) error {
+	g, ok := n.priv.(*Group)
+	if !ok {
+		log.Printf("priv is not group")
 		return fuse.ENOSYS
 	}
 
-	txt := strings.TrimSpace(string(msg))
-
-	out := fs.ws.NewOutgoingMessage(txt, ch.Id)
-	err := fs.ws.SendMessage(out)
-	if err != nil {
-		log.Printf("SendMessage: %s", err)
-	}
-	// TODO(bp) add this message to the session buffer, after we
-	// get an ok
-	return err
+	return g.fs.Send(msg, g.Id)
 }
 
 // TODO(bp) conceptually these would be better as FIFOs, but when mode
@@ -369,4 +438,30 @@ func NewChannelDir(parent *DirNode, ch *Channel) (*DirNode, error) {
 	chn.Activate()
 
 	return chn, nil
+}
+
+var groupAttrs = []AttrType{
+	{Name: "ctl", Write: writeGroupCtl},
+	{Name: "write", Write: writeGroupWrite},
+}
+
+func NewGroupDir(parent *DirNode, g *Group) (*DirNode, error) {
+	gn, err := NewDirNode(parent, g.Id, g)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode: %s", err)
+	}
+
+	for i, _ := range groupAttrs {
+		an, err := NewAttrNode(gn, &groupAttrs[i], g)
+		if err != nil {
+			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &chanAttrs[i], err)
+		}
+		an.Activate()
+	}
+
+	// session file
+
+	gn.Activate()
+
+	return gn, nil
 }
