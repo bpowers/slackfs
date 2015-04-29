@@ -11,7 +11,6 @@ import (
 	"github.com/nlopes/slack"
 
 	"bazil.org/fuse"
-	//"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
 )
 
@@ -25,6 +24,71 @@ type Group struct {
 	fs *FS
 }
 
+type IdNamer interface {
+	Id() string
+	Name() string
+}
+
+type DirSet struct {
+	dn      *DirNode // us
+	parent  *DirNode
+	byName  *DirNode // by-name child dir
+	byId    *DirNode // by-id child dir
+	objDirs map[string]*DirNode
+	objSyms map[string]*SymlinkNode
+}
+
+func NewDirSet(fs *FS, parent *DirNode, name string) (ds *DirSet, err error) {
+	ds = new(DirSet)
+	ds.dn, err = NewDirNode(parent, name, fs)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode('%s'): %s", name, err)
+	}
+	ds.byName, err = NewDirNode(ds.dn, "by-name", fs)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode(by-name): %s", err)
+	}
+	ds.byId, err = NewDirNode(ds.dn, "by-id", fs)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode(by-id): %s", err)
+	}
+
+	ds.objDirs = make(map[string]*DirNode)
+	ds.objSyms = make(map[string]*SymlinkNode)
+
+	return
+}
+
+func (ds *DirSet) LookupId(id string) *DirNode {
+	return ds.objDirs[id]
+}
+
+func (ds *DirSet) Container() *DirNode {
+	return ds.byId
+}
+
+func (ds *DirSet) Add(id, name string, child *DirNode) error {
+	ds.objDirs[id] = child
+	s, err := NewSymlinkNode(ds.byName, name, "../by-id/"+id, child)
+	if err != nil {
+		return fmt.Errorf("NewSymlinkNode(%s): %s", name, err)
+	}
+	ds.objSyms[name] = s
+	return nil
+}
+
+func (ds *DirSet) Activate() {
+	for _, n := range ds.objDirs {
+		n.Activate()
+	}
+	ds.byId.Activate()
+	for _, n := range ds.objSyms {
+		n.Activate()
+	}
+	ds.byName.Activate()
+	ds.dn.Activate()
+}
+
 type FS struct {
 	super *Super
 	api   *slack.Slack
@@ -33,17 +97,9 @@ type FS struct {
 	in    chan slack.SlackEvent
 	info  *slack.Info
 
-	users        map[string]*slack.User
-	userDirs     map[string]*DirNode
-	userNameSyms map[string]*SymlinkNode
-
-	channels        map[string]*Channel
-	channelDirs     map[string]*DirNode
-	channelNameSyms map[string]*SymlinkNode
-
-	groups        map[string]*Group
-	groupDirs     map[string]*DirNode
-	groupNameSyms map[string]*SymlinkNode
+	users    *DirSet
+	channels *DirSet
+	groups   *DirSet
 }
 
 func NewFS(token string) (*FS, error) {
@@ -56,20 +112,11 @@ func NewFS(token string) (*FS, error) {
 	info := api.GetInfo()
 
 	fs := &FS{
-		api:             api,
-		ws:              ws,
-		out:             make(chan slack.OutgoingMessage),
-		in:              make(chan slack.SlackEvent),
-		info:            &info,
-		users:           make(map[string]*slack.User),
-		userDirs:        make(map[string]*DirNode),
-		userNameSyms:    make(map[string]*SymlinkNode),
-		channels:        make(map[string]*Channel),
-		channelDirs:     make(map[string]*DirNode),
-		channelNameSyms: make(map[string]*SymlinkNode),
-		groups:          make(map[string]*Group),
-		groupDirs:       make(map[string]*DirNode),
-		groupNameSyms:   make(map[string]*SymlinkNode),
+		api:  api,
+		ws:   ws,
+		out:  make(chan slack.OutgoingMessage),
+		in:   make(chan slack.SlackEvent),
+		info: &info,
 	}
 
 	fs.super = NewSuper()
@@ -107,18 +154,9 @@ func NewOfflineFS(infoPath string) (*FS, error) {
 	}
 
 	fs := &FS{
-		out:             make(chan slack.OutgoingMessage),
-		in:              make(chan slack.SlackEvent),
-		info:            &info,
-		users:           make(map[string]*slack.User),
-		userDirs:        make(map[string]*DirNode),
-		userNameSyms:    make(map[string]*SymlinkNode),
-		channels:        make(map[string]*Channel),
-		channelDirs:     make(map[string]*DirNode),
-		channelNameSyms: make(map[string]*SymlinkNode),
-		groups:          make(map[string]*Group),
-		groupDirs:       make(map[string]*DirNode),
-		groupNameSyms:   make(map[string]*SymlinkNode),
+		out:  make(chan slack.OutgoingMessage),
+		in:   make(chan slack.SlackEvent),
+		info: &info,
 	}
 
 	fs.super = NewSuper()
@@ -159,122 +197,84 @@ func (fs *FS) init() error {
 	return nil
 }
 
-func (fs *FS) initUsers(parent *DirNode) error {
-	users, err := NewDirNode(parent, "users", fs)
+func (fs *FS) initUsers(parent *DirNode) (err error) {
+	fs.users, err = NewDirSet(fs, fs.super.root, "users")
 	if err != nil {
-		return fmt.Errorf("NewDirNode(users): %s", err)
-	}
-	byName, err := NewDirNode(users, "by-name", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-name): %s", err)
-	}
-	byId, err := NewDirNode(users, "by-id", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-id): %s", err)
+		return fmt.Errorf("NewDirSet('users'): %s", err)
 	}
 
+	userParent := fs.users.Container()
 	for _, u := range fs.info.Users {
 		up := new(slack.User)
 		*up = u
-		fs.users[u.Id] = up
-		ud, err := NewUserDir(byId, up)
+		ud, err := NewUserDir(userParent, up)
 		if err != nil {
 			return fmt.Errorf("NewUserDir(%s): %s", up.Id, err)
 		}
-		fs.userDirs[u.Id] = ud
-		us, err := NewSymlinkNode(byName, u.Name, "../by-id/"+u.Id, ud)
+		err = fs.users.Add(u.Id, u.Name, ud)
 		if err != nil {
-			return fmt.Errorf("NewSymlinkNode(%s): %s", up.Name, err)
+			return fmt.Errorf("Add(%s): %s", up.Id, err)
 		}
-		fs.userNameSyms[u.Name] = us
-		us.Activate()
 	}
-	byId.Activate()
-	byName.Activate()
-	users.Activate()
+
+	fs.users.Activate()
 	return nil
 }
 
-func (fs *FS) initChannels(parent *DirNode) error {
-	channels, err := NewDirNode(parent, "channels", fs)
+func (fs *FS) initChannels(parent *DirNode) (err error) {
+	fs.channels, err = NewDirSet(fs, fs.super.root, "channels")
 	if err != nil {
-		return fmt.Errorf("NewDirNode(channels): %s", err)
-	}
-	byName, err := NewDirNode(channels, "by-name", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-name): %s", err)
-	}
-	byId, err := NewDirNode(channels, "by-id", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-id): %s", err)
+		return fmt.Errorf("NewDirSet('channels'): %s", err)
 	}
 
-	for _, ch := range fs.info.Channels {
-		if !ch.IsMember {
-			continue
-		}
-
-		chp := new(Channel)
-		chp.Channel = ch
-		chp.fs = fs
-		fs.channels[ch.Id] = chp
-		chd, err := NewChannelDir(byId, chp)
+	chanParent := fs.users.Container()
+	for _, c := range fs.info.Channels {
+		cp := new(Channel)
+		cp.Channel = c
+		cd, err := NewChannelDir(chanParent, cp)
 		if err != nil {
-			return fmt.Errorf("NewChannelDir(%s): %s", ch.Id, err)
+			return fmt.Errorf("NewChanDir(%s): %s", cp.Id, err)
 		}
-		fs.channelDirs[ch.Id] = chd
-		chs, err := NewSymlinkNode(byName, ch.Name, "../by-id/"+ch.Id, chd)
+		err = fs.channels.Add(c.Id, c.Name, cd)
 		if err != nil {
-			return fmt.Errorf("NewSymlinkNode(%s): %s", ch.Name, err)
+			return fmt.Errorf("Add(%s): %s", cp.Id, err)
 		}
-		fs.channelNameSyms[ch.Name] = chs
-		chs.Activate()
 	}
-	byId.Activate()
-	byName.Activate()
-	channels.Activate()
+
+	fs.channels.Activate()
 	return nil
 }
 
-func (fs *FS) initGroups(parent *DirNode) error {
-	groups, err := NewDirNode(parent, "private-groups", fs)
+func (fs *FS) initGroups(parent *DirNode) (err error) {
+	fs.groups, err = NewDirSet(fs, fs.super.root, "groups")
 	if err != nil {
-		return fmt.Errorf("NewDirNode(groups): %s", err)
-	}
-	byName, err := NewDirNode(groups, "by-name", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-name): %s", err)
-	}
-	byId, err := NewDirNode(groups, "by-id", fs)
-	if err != nil {
-		return fmt.Errorf("NewDirNode(by-id): %s", err)
+		return fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
 
+	groupParent := fs.users.Container()
 	for _, g := range fs.info.Groups {
 		gp := new(Group)
 		gp.Group = g
-		gp.fs = fs
-		fs.groups[g.Id] = gp
-		gd, err := NewGroupDir(byId, gp)
+		gd, err := NewGroupDir(groupParent, gp)
 		if err != nil {
-			return fmt.Errorf("NewGroupDir(%s): %s", g.Id, err)
+			return fmt.Errorf("NewChanDir(%s): %s", gp.Id, err)
 		}
-		fs.groupDirs[g.Id] = gd
-		gs, err := NewSymlinkNode(byName, g.Name, "../by-id/"+g.Id, gd)
+		err = fs.groups.Add(g.Id, g.Name, gd)
 		if err != nil {
-			return fmt.Errorf("NewSymlinkNode(%s): %s", g.Name, err)
+			return fmt.Errorf("Add(%s): %s", gp.Id, err)
 		}
-		fs.groupNameSyms[g.Name] = gs
-		gs.Activate()
 	}
-	byId.Activate()
-	byName.Activate()
-	groups.Activate()
+
+	fs.groups.Activate()
 	return nil
 }
 
 func (fs *FS) GetUser(id string) (*slack.User, bool) {
-	u, ok := fs.users[id]
+	userDir := fs.users.LookupId(id)
+	if userDir == nil {
+		return nil, false
+	}
+	u, ok := userDir.priv.(*slack.User)
 	return u, ok
 }
 
@@ -287,7 +287,7 @@ func (fs *FS) routeIncomingEvents() {
 			fmt.Printf("msg\t%s\t%s\t%s\t(%#v)\n", ev.Timestamp, ev.UserId, ev.Text, ev)
 		case *slack.PresenceChangeEvent:
 			name := "<unknown>"
-			if u, ok := fs.users[ev.UserId]; ok {
+			if u, ok := fs.GetUser(ev.UserId); ok {
 				name = u.Name
 			}
 			fmt.Printf("presence\t%s\t%s\n", name, ev.Presence)
