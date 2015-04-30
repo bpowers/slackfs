@@ -26,11 +26,8 @@ func newUserId(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userIdNode) Update() {
-	n.parent.mu.Lock()
-	defer n.parent.mu.Unlock()
-
-	n.val = n.priv.(*slack.User).Id + "\n"
-	n.updateCommon()
+	val := n.parent.priv.(*slack.User).Id + "\n"
+	n.updateCommon(val)
 }
 
 type userNameNode struct {
@@ -49,11 +46,8 @@ func newUserName(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userNameNode) Update() {
-	n.parent.mu.Lock()
-	defer n.parent.mu.Unlock()
-
-	n.val = n.priv.(*slack.User).Name + "\n"
-	n.updateCommon()
+	val := n.parent.priv.(*slack.User).Name + "\n"
+	n.updateCommon(val)
 }
 
 type userPresenceNode struct {
@@ -72,11 +66,8 @@ func newUserPresence(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userPresenceNode) Update() {
-	n.parent.mu.Lock()
-	defer n.parent.mu.Unlock()
-
-	n.val = n.priv.(*slack.User).Presence + "\n"
-	n.updateCommon()
+	val := n.parent.priv.(*slack.User).Presence + "\n"
+	n.updateCommon(val)
 }
 
 type userIsBotNode struct {
@@ -95,15 +86,13 @@ func newUserIsBot(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userIsBotNode) Update() {
-	n.parent.mu.Lock()
-	defer n.parent.mu.Unlock()
-
-	if n.priv.(*slack.User).IsBot {
-		n.val = "true\n"
+	var val string
+	if n.parent.priv.(*slack.User).IsBot {
+		val = "true\n"
 	} else {
-		n.val = "false\n"
+		val = "false\n"
 	}
-	n.updateCommon()
+	n.updateCommon(val)
 }
 
 var userAttrs = []AttrFactory{
@@ -120,7 +109,7 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 	}
 
 	for _, attrFactory := range userAttrs {
-		n, err := attrFactory(dir, u)
+		n, err := attrFactory(dir, nil)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}

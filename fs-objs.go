@@ -224,10 +224,6 @@ type AttrNode struct {
 	Node
 	Mode os.FileMode
 
-	// size and content are derived from val, val must be updated
-	// with mu held.
-	val string
-
 	size    uint64
 	content atomic.Value // []byte
 }
@@ -238,14 +234,13 @@ func (an *AttrNode) Attr(a *fuse.Attr) {
 	a.Size = an.size
 }
 
-// must be called with mu held
-func (n *AttrNode) updateCommon() {
-	size := len(n.val)
+func (n *AttrNode) updateCommon(val string) {
+	size := len(val)
 	atomic.StoreUint64(&n.size, uint64(size))
 
 	var content *[]byte
 	if size != 0 {
-		contentSlice := []byte(n.val)
+		contentSlice := []byte(val)
 		content = &contentSlice
 	}
 	n.content.Store(content)
