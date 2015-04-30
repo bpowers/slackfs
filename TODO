@@ -1,4 +1,3 @@
-get rid of AttrType
 update user objects on presence/name changes
 
 implement ch/session
