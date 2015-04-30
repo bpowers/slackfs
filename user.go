@@ -113,7 +113,7 @@ func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}
-		n.Activate()
+		dir.addChild(n)
 	}
 
 	return dir, nil

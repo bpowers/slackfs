@@ -111,6 +111,10 @@ func (an *AttrNode) DirentType() fuse.DirentType {
 	return fuse.DT_File
 }
 
+type Updater interface {
+	Update()
+}
+
 type INode interface {
 	fs.Node
 	Dirent() fuse.Dirent

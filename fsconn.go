@@ -170,8 +170,10 @@ func (fs *FSConn) initGroups(parent *DirNode) (err error) {
 }
 
 func (fs *FSConn) UpdateUser(id string) {
-	// fetch user object over HTTPS
-	var u *slack.User
+	u, err := fs.api.GetUserInfo(id)
+	if err != nil {
+		log.Printf("UpdateUser: GetUserInfo('%s'): %s", id, err)
+	}
 
 	userDir := fs.users.LookupId(id)
 	if userDir == nil {
@@ -182,10 +184,31 @@ func (fs *FSConn) UpdateUser(id string) {
 
 	userDir.mu.Lock()
 	defer userDir.mu.Unlock()
-	//userDir.priv = u
-	// for _, child := range userDir.children {
-	//   child.Update()
-	// }
+	userDir.priv = u
+	log.Printf("updating %#v", u)
+	for _, child := range userDir.children {
+		if updater, ok := child.(Updater); ok {
+			log.Printf("is updater %s", child.Name())
+			updater.Update()
+		}
+	}
+	log.Printf("updated user %s", u.Name)
+}
+
+func (fs *FSConn) UpdatePresence(id, presence string) {
+	userDir := fs.users.LookupId(id)
+	if userDir == nil {
+		return
+	}
+
+	userDir.mu.Lock()
+	defer userDir.mu.Unlock()
+	userDir.priv.(*slack.User).Presence = presence
+	for _, child := range userDir.children {
+		if updater, ok := child.(Updater); ok && child.Name() == "presence" {
+			updater.Update()
+		}
+	}
 }
 
 func (fs *FSConn) GetUser(id string) (*slack.User, bool) {
@@ -205,7 +228,9 @@ func (fs *FSConn) routeIncomingEvents() {
 		case *slack.MessageEvent:
 			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
 		case *slack.PresenceChangeEvent:
-			fs.UpdateUser(ev.UserId)
+			// don't block processing of other events
+			// while updating the user
+			go fs.UpdatePresence(ev.UserId, ev.Presence)
 			name := "<unknown>"
 			if u, ok := fs.GetUser(ev.UserId); ok {
 				name = u.Name
