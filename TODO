@@ -1,0 +1,13 @@
+get rid of AttrType
+update user objects on presence/name changes
+
+implement ch/session
+implement ch/ctl (leave, change session buffer size)
+implement channels ctl (join)
+implement ch/write.pre
+implement ch/write.md
+implement ch/history.json
+
+implement direct messages
+
+document locking order
