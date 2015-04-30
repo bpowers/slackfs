@@ -171,7 +171,6 @@ func (fs *FSConn) initGroups(parent *DirNode) (err error) {
 
 func (fs *FSConn) UpdateUser(id string) {
 	// fetch user object over HTTPS
-
 	var u *slack.User
 
 	userDir := fs.users.LookupId(id)
@@ -181,9 +180,12 @@ func (fs *FSConn) UpdateUser(id string) {
 		return
 	}
 
-	// lock userDir
-	// update userDir's priv object
-	// call Update() on all attrs
+	userDir.mu.Lock()
+	defer userDir.mu.Unlock()
+	//userDir.priv = u
+	// for _, child := range userDir.children {
+	//   child.Update()
+	// }
 }
 
 func (fs *FSConn) GetUser(id string) (*slack.User, bool) {

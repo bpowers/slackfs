@@ -118,6 +118,7 @@ type INode interface {
 	IsDir() bool
 	Activate() error
 	Name() string
+	//Update() ?
 }
 
 func (dn *DirNode) IsDir() bool {
