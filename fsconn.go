@@ -49,7 +49,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		}
 	} else {
 		conn.api = slack.New(token)
-		conn.api.SetDebug(true)
+		//conn.api.SetDebug(true)
 		conn.ws, err = conn.api.StartRTM("", "https://slack.com")
 		if err != nil {
 			return nil, fmt.Errorf("StartRTM(): %s\n", err)
