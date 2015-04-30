@@ -43,6 +43,7 @@ func main() {
 	offline := flag.String("offline", "",
 		"specified JSON info response file to use offline")
 	token := flag.String("token", "", "Slack API token")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
 		flag.PrintDefaults()
@@ -52,6 +53,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
 	mountpoint := flag.Arg(0)
 
 	prof, err := NewProf(memProfile, cpuProfile)
@@ -77,18 +79,16 @@ func main() {
 		}
 	}()
 
-	var sfs *FS
+	var conn *FSConn
 	if *offline != "" {
 		log.Printf("offline mode")
-		sfs, err = NewOfflineFS(*offline)
+		conn, err = NewOfflineFS(*offline)
 	} else {
-		sfs, err = NewFS(*token)
+		conn, err = NewFS(*token)
 	}
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
 	}
-
-	log.Printf("ws: %#v", sfs.ws)
 
 	c, err := fuse.Mount(
 		mountpoint,
@@ -102,7 +102,7 @@ func main() {
 	}
 	defer c.Close()
 
-	err = fs.Serve(c, sfs.super)
+	err = fs.Serve(c, conn.super)
 	if err != nil {
 		log.Fatal(err)
 	}
