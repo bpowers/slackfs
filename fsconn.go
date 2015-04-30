@@ -169,6 +169,23 @@ func (fs *FSConn) initGroups(parent *DirNode) (err error) {
 	return nil
 }
 
+func (fs *FSConn) UpdateUser(id string) {
+	// fetch user object over HTTPS
+
+	var u *slack.User
+
+	userDir := fs.users.LookupId(id)
+	if userDir == nil {
+		log.Printf("added new user %s (%s)", id, u.Name)
+		// FIXME(bp) fs.users.Add() it
+		return
+	}
+
+	// lock userDir
+	// update userDir's priv object
+	// call Update() on all attrs
+}
+
 func (fs *FSConn) GetUser(id string) (*slack.User, bool) {
 	userDir := fs.users.LookupId(id)
 	if userDir == nil {
@@ -186,6 +203,7 @@ func (fs *FSConn) routeIncomingEvents() {
 		case *slack.MessageEvent:
 			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
 		case *slack.PresenceChangeEvent:
+			fs.UpdateUser(ev.UserId)
 			name := "<unknown>"
 			if u, ok := fs.GetUser(ev.UserId); ok {
 				name = u.Name

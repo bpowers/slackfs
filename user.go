@@ -26,8 +26,8 @@ func newUserId(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userIdNode) Update() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.parent.mu.Lock()
+	defer n.parent.mu.Unlock()
 
 	n.val = n.priv.(*slack.User).Id + "\n"
 	n.updateCommon()
@@ -49,8 +49,8 @@ func newUserName(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userNameNode) Update() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.parent.mu.Lock()
+	defer n.parent.mu.Unlock()
 
 	n.val = n.priv.(*slack.User).Name + "\n"
 	n.updateCommon()
@@ -72,8 +72,8 @@ func newUserPresence(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userPresenceNode) Update() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.parent.mu.Lock()
+	defer n.parent.mu.Unlock()
 
 	n.val = n.priv.(*slack.User).Presence + "\n"
 	n.updateCommon()
@@ -95,8 +95,8 @@ func newUserIsBot(parent *DirNode, priv interface{}) (INode, error) {
 }
 
 func (n *userIsBotNode) Update() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.parent.mu.Lock()
+	defer n.parent.mu.Unlock()
 
 	if n.priv.(*slack.User).IsBot {
 		n.val = "true\n"

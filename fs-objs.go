@@ -158,6 +158,10 @@ func (an *AttrNode) Activate() error {
 
 type DirNode struct {
 	Node
+
+	// lock for attribute writes/updates.  Reads are lock-free.
+	mu sync.Mutex
+
 	childmap map[string]INode
 	children []INode
 }
@@ -226,9 +230,6 @@ type AttrNode struct {
 
 	size    uint64
 	content atomic.Value // []byte
-
-	// lock for attribute writes/updates.  Reads are lock-free.
-	mu sync.Mutex
 }
 
 func (an *AttrNode) Attr(a *fuse.Attr) {
