@@ -24,14 +24,11 @@ type IdNamer interface {
 }
 
 type FSConn struct {
-	//
 	super *Super
 
-	api *slack.Slack
-	ws  *slack.SlackWS
-
-	in chan slack.SlackEvent
-
+	api  *slack.Slack
+	ws   *slack.SlackWS
+	in   chan slack.SlackEvent
 	info *slack.Info
 
 	users    *DirSet
@@ -185,7 +182,7 @@ func (fs *FSConn) routeIncomingEvents() {
 
 		switch ev := msg.Data.(type) {
 		case *slack.MessageEvent:
-			fmt.Printf("msg\t%s\t%s\t%s\t(%#v)\n", ev.Timestamp, ev.UserId, ev.Text, ev)
+			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
 		case *slack.PresenceChangeEvent:
 			name := "<unknown>"
 			if u, ok := fs.GetUser(ev.UserId); ok {
