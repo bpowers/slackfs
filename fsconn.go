@@ -57,8 +57,6 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		info = conn.api.GetInfo()
 	}
 
-	log.Printf("conn %d/%d/%d", len(info.Users), len(info.Channels), len(info.Groups))
-
 	conn.info = &info
 	conn.in = make(chan slack.SlackEvent)
 	conn.super = NewSuper()
@@ -78,9 +76,12 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		return nil, fmt.Errorf("initChannels: %s", err)
 	}
 
-	go conn.ws.HandleIncomingEvents(conn.in)
-	go conn.ws.Keepalive(10 * time.Second)
-	go conn.routeIncomingEvents()
+	// only spawn goroutines in online mode
+	if infoPath == "" {
+		go conn.ws.HandleIncomingEvents(conn.in)
+		go conn.ws.Keepalive(10 * time.Second)
+		go conn.routeIncomingEvents()
+	}
 
 	return conn, nil
 }
@@ -101,6 +102,9 @@ func (fs *FSConn) initUsers(parent *DirNode) (err error) {
 
 	userParent := fs.users.Container()
 	for _, u := range fs.info.Users {
+		if u.Deleted {
+			continue
+		}
 		up := new(slack.User)
 		*up = u
 		ud, err := NewUserDir(userParent, up)
@@ -123,7 +127,6 @@ func (fs *FSConn) initChannels(parent *DirNode) (err error) {
 		return fmt.Errorf("NewDirSet('channels'): %s", err)
 	}
 
-	fmt.Printf("n chans %d\n", len(fs.info.Channels))
 	chanParent := fs.channels.Container()
 	for _, c := range fs.info.Channels {
 		cp := new(Channel)
@@ -132,7 +135,6 @@ func (fs *FSConn) initChannels(parent *DirNode) (err error) {
 		if err != nil {
 			return fmt.Errorf("NewChanDir(%s): %s", cp.Id, err)
 		}
-		fmt.Printf("adding chan %s %s", c.Id, c.Name)
 		err = fs.channels.Add(c.Id, c.Name, cd)
 		if err != nil {
 			return fmt.Errorf("Add(%s): %s", cp.Id, err)
