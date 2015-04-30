@@ -30,7 +30,6 @@ func debug(msg interface{}) {
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	fuse.Debug = debug
 }
 
 var memProfile, cpuProfile string
@@ -44,6 +43,8 @@ func main() {
 		"specified JSON info response file to use offline")
 	token := flag.String("token", "", "Slack API token")
 
+	verbose := flag.Bool("v", false, "verbose FUSE logging")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
 		flag.PrintDefaults()
@@ -53,6 +54,11 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	if *verbose {
+		fuse.Debug = debug
+	}
+
 
 	mountpoint := flag.Arg(0)
 
