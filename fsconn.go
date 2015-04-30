@@ -24,15 +24,15 @@ type IdNamer interface {
 }
 
 type FSConn struct {
-	//
+	// 
 	super *Super
 
-	api *slack.Slack
-	ws  *slack.SlackWS
+	api   *slack.Slack
+	ws    *slack.SlackWS
 
-	in chan slack.SlackEvent
+	in    chan slack.SlackEvent
 
-	info *slack.Info
+	info  *slack.Info
 
 	users    *DirSet
 	channels *DirSet
