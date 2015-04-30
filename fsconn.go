@@ -13,9 +13,6 @@ import (
 	"time"
 
 	"github.com/nlopes/slack"
-
-	"bazil.org/fuse"
-	"golang.org/x/net/context"
 )
 
 type IdNamer interface {
@@ -52,6 +49,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		}
 	} else {
 		conn.api = slack.New(token)
+		conn.api.SetDebug(true)
 		conn.ws, err = conn.api.StartRTM("", "https://slack.com")
 		if err != nil {
 			return nil, fmt.Errorf("StartRTM(): %s\n", err)
@@ -59,7 +57,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		info = conn.api.GetInfo()
 	}
 
-	//conn.api.SetDebug(true)
+	log.Printf("conn %d/%d/%d", len(info.Users), len(info.Channels), len(info.Groups))
 
 	conn.info = &info
 	conn.in = make(chan slack.SlackEvent)
@@ -125,7 +123,8 @@ func (fs *FSConn) initChannels(parent *DirNode) (err error) {
 		return fmt.Errorf("NewDirSet('channels'): %s", err)
 	}
 
-	chanParent := fs.users.Container()
+	fmt.Printf("n chans %d\n", len(fs.info.Channels))
+	chanParent := fs.channels.Container()
 	for _, c := range fs.info.Channels {
 		cp := new(Channel)
 		cp.Channel = c
@@ -133,6 +132,7 @@ func (fs *FSConn) initChannels(parent *DirNode) (err error) {
 		if err != nil {
 			return fmt.Errorf("NewChanDir(%s): %s", cp.Id, err)
 		}
+		fmt.Printf("adding chan %s %s", c.Id, c.Name)
 		err = fs.channels.Add(c.Id, c.Name, cd)
 		if err != nil {
 			return fmt.Errorf("Add(%s): %s", cp.Id, err)
@@ -149,7 +149,7 @@ func (fs *FSConn) initGroups(parent *DirNode) (err error) {
 		return fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
 
-	groupParent := fs.users.Container()
+	groupParent := fs.groups.Container()
 	for _, g := range fs.info.Groups {
 		gp := new(Group)
 		gp.Group = g

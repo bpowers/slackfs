@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -154,16 +156,6 @@ func (an *AttrNode) Activate() error {
 	return an.parent.addChild(an)
 }
 
-type AttrType struct {
-	// used when Node.name is empty
-	Name string
-	Mode os.FileMode
-
-	ReadLen func(*AttrNode) int
-	ReadAll func(context.Context, *AttrNode) ([]byte, error)
-	Write   func(context.Context, *AttrNode, int64, []byte) error
-}
-
 type DirNode struct {
 	Node
 	childmap map[string]INode
@@ -222,37 +214,49 @@ func (sn *SymlinkNode) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) 
 	return sn.path, nil
 }
 
+type AttrFactory func(parent *DirNode, priv interface{}) (INode, error)
+
 type AttrNode struct {
 	Node
-	ty *AttrType
+	Mode os.FileMode
+
+	// size and content are derived from val, val must be updated
+	// with mu held.
+	val string
+
+	size    uint64
+	content atomic.Value // []byte
+
+	// lock for attribute writes/updates.  Reads are lock-free.
+	mu sync.Mutex
 }
 
 func (an *AttrNode) Attr(a *fuse.Attr) {
 	a.Inode = an.ino
-	a.Mode = an.mode
-	if an.ty.ReadLen != nil {
-		a.Size = uint64(an.ty.ReadLen(an))
+	a.Mode = an.Mode
+	a.Size = an.size
+}
+
+// must be called with mu held
+func (n *AttrNode) updateCommon() {
+	size := len(n.val)
+	atomic.StoreUint64(&n.size, uint64(size))
+
+	var content *[]byte
+	if size != 0 {
+		contentSlice := []byte(n.val)
+		content = &contentSlice
 	}
+	n.content.Store(content)
 }
 
 func (an *AttrNode) ReadAll(ctx context.Context) ([]byte, error) {
-	if an.ty.ReadAll == nil {
+	// if content is nil, it means we are write-only.
+	content := an.content.Load().(*[]byte)
+	if content == nil {
 		return nil, fuse.ENOSYS
 	}
-
-	return an.ty.ReadAll(ctx, an)
-}
-
-func (an *AttrNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	if an.ty.Write == nil {
-		return fuse.ENOSYS
-	}
-
-	err := an.ty.Write(ctx, an, req.Offset, req.Data)
-	if err == nil {
-		resp.Size = len(req.Data)
-	}
-	return err
+	return *content, nil
 }
 
 func NewSuper() *Super {
@@ -303,22 +307,11 @@ func NewSymlinkNode(parent *DirNode, name string, targetPath string, target INod
 	return sn, nil
 }
 
-func NewAttrNode(parent *DirNode, ty *AttrType, priv interface{}) (*AttrNode, error) {
-	name := ty.Name
+func NewAttrNode(parent *DirNode, name string, priv interface{}) (*AttrNode, error) {
 	an := new(AttrNode)
 	err := an.Node.Init(parent, name, priv)
 	if err != nil {
 		return nil, fmt.Errorf("n.Init('%s', %#v): %s", name, priv, err)
 	}
-	an.ty = ty
-	an.mode = ty.Mode
-
-	if ty.ReadAll != nil {
-		an.mode |= 0444
-	}
-	if ty.Write != nil {
-		an.mode |= 0222
-	}
-
 	return an, nil
 }

@@ -5,46 +5,90 @@
 package main
 
 import (
+	"fmt"
+	"log"
+
+	"bazil.org/fuse"
 	"github.com/nlopes/slack"
+	"golang.org/x/net/context"
 )
 
-func writeGroupCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) error {
-	log.Printf("ctl: %s", string(msg))
+type groupCtlNode struct {
+	AttrNode
+}
+
+func newGroupCtl(parent *DirNode, priv interface{}) (INode, error) {
+	name := "ctl"
+	n := new(groupCtlNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0222
+	return n, nil
+}
+
+func (n *groupCtlNode) Update() {
+}
+
+func (n *groupCtlNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	log.Printf("ctl: %s", string(req.Data))
 	return nil
 }
 
-func writeGroupWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) error {
+type groupWriteNode struct {
+	AttrNode
+}
+
+func newGroupWrite(parent *DirNode, priv interface{}) (INode, error) {
+	name := "write"
+	n := new(groupWriteNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0222
+	return n, nil
+}
+
+func (n *groupWriteNode) Update() {
+}
+
+func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 	g, ok := n.priv.(*Group)
 	if !ok {
 		log.Printf("priv is not group")
 		return fuse.ENOSYS
 	}
 
-	return g.fs.Send(msg, g.Id)
+	return g.fs.Send(req.Data, g.Id)
 }
 
-var groupAttrs = []AttrType{
-	{Name: "ctl", Write: writeGroupCtl},
-	{Name: "write", Write: writeGroupWrite},
+type Group struct {
+	slack.Group
+	fs *FSConn
+}
+
+var groupAttrs = []AttrFactory{
+	newGroupCtl,
+	newGroupWrite,
 }
 
 func NewGroupDir(parent *DirNode, g *Group) (*DirNode, error) {
-	gn, err := NewDirNode(parent, g.Id, g)
+	dir, err := NewDirNode(parent, g.Id, g)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	for i, _ := range groupAttrs {
-		an, err := NewAttrNode(gn, &groupAttrs[i], g)
+	for _, attrFactory := range groupAttrs {
+		n, err := attrFactory(dir, g)
 		if err != nil {
-			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &chanAttrs[i], err)
+			return nil, fmt.Errorf("attrFactory: %s", err)
 		}
-		an.Activate()
+		n.Activate()
 	}
 
-	// session file
+	// TODO(bp) session file
 
-	gn.Activate()
-
-	return gn, nil
+	return dir, nil
 }

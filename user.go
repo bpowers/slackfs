@@ -5,76 +5,127 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/nlopes/slack"
 )
 
-var (
-	trueBytes  = []byte("true\n")
-	falseBytes = []byte("false\n")
-)
-
-func readUserIdLen(n *AttrNode) int {
-	return len(n.priv.(*slack.User).Id) + 1
+type userIdNode struct {
+	AttrNode
 }
 
-func readUserNameLen(n *AttrNode) int {
-	return len(n.priv.(*slack.User).Name) + 1
-}
-
-func readUserPresenceLen(n *AttrNode) int {
-	return len(n.priv.(*slack.User).Presence) + 1
-}
-
-func readUserIsBotLen(n *AttrNode) int {
-	if n.priv.(*slack.User).IsBot {
-		return len("true") + 1
-	} else {
-		return len("false") + 1
+func newUserId(parent *DirNode, priv interface{}) (INode, error) {
+	name := "id"
+	n := new(userIdNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
+	n.Update()
+	n.mode = 0444
+	return n, nil
 }
 
-func readUserId(ctx context.Context, n *AttrNode) ([]byte, error) {
-	return []byte(n.priv.(*slack.User).Id + "\n"), nil
+func (n *userIdNode) Update() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.val = n.priv.(*slack.User).Id + "\n"
+	n.updateCommon()
 }
 
-func readUserName(ctx context.Context, n *AttrNode) ([]byte, error) {
-	return []byte(n.priv.(*slack.User).Name + "\n"), nil
+type userNameNode struct {
+	AttrNode
 }
 
-func readUserPresence(ctx context.Context, n *AttrNode) ([]byte, error) {
-	return []byte(n.priv.(*slack.User).Presence + "\n"), nil
-}
-
-func readUserIsBot(ctx context.Context, n *AttrNode) ([]byte, error) {
-	if n.priv.(*slack.User).IsBot {
-		return trueBytes, nil
-	} else {
-		return falseBytes, nil
+func newUserName(parent *DirNode, priv interface{}) (INode, error) {
+	name := "name"
+	n := new(userNameNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
+	n.Update()
+	n.mode = 0444
+	return n, nil
 }
 
-var userAttrs = []AttrType{
-	{Name: "id", ReadLen: readUserIdLen, ReadAll: readUserId},
-	{Name: "name", ReadLen: readUserNameLen, ReadAll: readUserName},
-	{Name: "presence", ReadLen: readUserPresenceLen, ReadAll: readUserPresence},
-	{Name: "is_bot", ReadLen: readUserIsBotLen, ReadAll: readUserIsBot},
+func (n *userNameNode) Update() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.val = n.priv.(*slack.User).Name + "\n"
+	n.updateCommon()
+}
+
+type userPresenceNode struct {
+	AttrNode
+}
+
+func newUserPresence(parent *DirNode, priv interface{}) (INode, error) {
+	name := "presence"
+	n := new(userPresenceNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0444
+	return n, nil
+}
+
+func (n *userPresenceNode) Update() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.val = n.priv.(*slack.User).Presence + "\n"
+	n.updateCommon()
+}
+
+type userIsBotNode struct {
+	AttrNode
+}
+
+func newUserIsBot(parent *DirNode, priv interface{}) (INode, error) {
+	name := "is-bot"
+	n := new(userIsBotNode)
+	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0444
+	return n, nil
+}
+
+func (n *userIsBotNode) Update() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.priv.(*slack.User).IsBot {
+		n.val = "true\n"
+	} else {
+		n.val = "false\n"
+	}
+	n.updateCommon()
+}
+
+var userAttrs = []AttrFactory{
+	newUserId,
+	newUserName,
+	newUserPresence,
+	newUserIsBot,
 }
 
 func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
-	dn, err := NewDirNode(parent, u.Id, u)
+	dir, err := NewDirNode(parent, u.Id, u)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	for i, _ := range userAttrs {
-		an, err := NewAttrNode(dn, &userAttrs[i], u)
+	for _, attrFactory := range userAttrs {
+		n, err := attrFactory(dir, u)
 		if err != nil {
-			return nil, fmt.Errorf("NewAttrNode(%#v): %s", &userAttrs[i], err)
+			return nil, fmt.Errorf("attrFactory: %s", err)
 		}
-		an.Activate()
+		n.Activate()
 	}
 
-	dn.Activate()
-
-	return dn, nil
+	return dir, nil
 }
