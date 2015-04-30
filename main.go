@@ -59,7 +59,6 @@ func main() {
 		fuse.Debug = debug
 	}
 
-
 	mountpoint := flag.Arg(0)
 
 	prof, err := NewProf(memProfile, cpuProfile)
@@ -87,10 +86,9 @@ func main() {
 
 	var conn *FSConn
 	if *offline != "" {
-		log.Printf("offline mode")
-		conn, err = NewOfflineFS(*offline)
+		conn, err = NewOfflineFSConn(*offline)
 	} else {
-		conn, err = NewFS(*token)
+		conn, err = NewFSConn(*token)
 	}
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)

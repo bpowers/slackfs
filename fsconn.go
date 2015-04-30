@@ -24,112 +24,78 @@ type IdNamer interface {
 }
 
 type FSConn struct {
-	// 
+	//
 	super *Super
 
-	api   *slack.Slack
-	ws    *slack.SlackWS
+	api *slack.Slack
+	ws  *slack.SlackWS
 
-	in    chan slack.SlackEvent
+	in chan slack.SlackEvent
 
-	info  *slack.Info
+	info *slack.Info
 
 	users    *DirSet
 	channels *DirSet
 	groups   *DirSet
 }
 
-func NewFS(token string) (*FSConn, error) {
-	api := slack.New(token)
-	ws, err := api.StartRTM("", "https://slack.com")
-	if err != nil {
-		return nil, fmt.Errorf("StartRTM(): %s\n", err)
-	}
-
-	info := api.GetInfo()
-
-	fs := &FSConn{
-		api:  api,
-		ws:   ws,
-		in:   make(chan slack.SlackEvent),
-		info: &info,
-	}
-
-	fs.super = NewSuper()
-
-	api.SetDebug(true)
-	go ws.HandleIncomingEvents(fs.in)
-	go ws.Keepalive(10 * time.Second)
-
-	for _, c := range fs.info.Channels {
-		if !c.IsMember {
-			continue
-		}
-		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
-	}
-
-	err = fs.init()
-	if err != nil {
-		return nil, fmt.Errorf("init: %s", err)
-	}
-
-	go fs.routeIncomingEvents()
-
-	return fs, nil
-}
-
-func NewOfflineFS(infoPath string) (*FSConn, error) {
-	buf, err := ioutil.ReadFile(infoPath)
-	if err != nil {
-		return nil, fmt.Errorf("ReadFile(%s): %s", infoPath, err)
-	}
+// shared by offline/offline public New functions
+func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	var info slack.Info
-	err = json.Unmarshal(buf, &info)
-	if err != nil {
-		return nil, fmt.Errorf("Unmarshal: %s", err)
-	}
+	conn = new(FSConn)
 
-	fs := &FSConn{
-		in:   make(chan slack.SlackEvent),
-		info: &info,
-	}
-
-	fs.super = NewSuper()
-
-	for _, c := range info.Channels {
-		if !c.IsMember {
-			continue
+	if infoPath != "" {
+		buf, err := ioutil.ReadFile(infoPath)
+		if err != nil {
+			return nil, fmt.Errorf("ReadFile(%s): %s", infoPath, err)
 		}
-		fmt.Printf("%s (%d members)\n", c.Name, len(c.Members))
+		err = json.Unmarshal(buf, &info)
+		if err != nil {
+			return nil, fmt.Errorf("Unmarshal: %s", err)
+		}
+	} else {
+		conn.api = slack.New(token)
+		conn.ws, err = conn.api.StartRTM("", "https://slack.com")
+		if err != nil {
+			return nil, fmt.Errorf("StartRTM(): %s\n", err)
+		}
+		info = conn.api.GetInfo()
 	}
 
-	err = fs.init()
+	//conn.api.SetDebug(true)
+
+	conn.info = &info
+	conn.in = make(chan slack.SlackEvent)
+	conn.super = NewSuper()
+
+	root := conn.super.GetRoot()
+
+	err = conn.initUsers(root)
 	if err != nil {
-		return nil, fmt.Errorf("init: %s", err)
+		return nil, fmt.Errorf("initUsers: %s", err)
+	}
+	err = conn.initChannels(root)
+	if err != nil {
+		return nil, fmt.Errorf("initChannels: %s", err)
+	}
+	err = conn.initGroups(root)
+	if err != nil {
+		return nil, fmt.Errorf("initChannels: %s", err)
 	}
 
-	//go fs.routeIncomingEvents()
+	go conn.ws.HandleIncomingEvents(conn.in)
+	go conn.ws.Keepalive(10 * time.Second)
+	go conn.routeIncomingEvents()
 
-	return fs, nil
+	return conn, nil
 }
 
-func (fs *FSConn) init() error {
-	root := fs.super.GetRoot()
+func NewFSConn(token string) (*FSConn, error) {
+	return newFSConn(token, "")
+}
 
-	err := fs.initUsers(root)
-	if err != nil {
-		return fmt.Errorf("initUsers: %s", err)
-	}
-	err = fs.initChannels(root)
-	if err != nil {
-		return fmt.Errorf("initChannels: %s", err)
-	}
-	err = fs.initGroups(root)
-	if err != nil {
-		return fmt.Errorf("initChannels: %s", err)
-	}
-
-	return nil
+func NewOfflineFSConn(infoPath string) (*FSConn, error) {
+	return newFSConn("", infoPath)
 }
 
 func (fs *FSConn) initUsers(parent *DirNode) (err error) {
