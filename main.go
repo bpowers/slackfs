@@ -29,7 +29,9 @@ func debug(msg interface{}) {
 }
 
 func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	// with more than 1 maxproc, we end up with wild, terrible
+	// memory fragmentation.
+	runtime.GOMAXPROCS(1)
 }
 
 var memProfile, cpuProfile string
@@ -76,11 +78,15 @@ func main() {
 	go func() {
 		for range sigChan {
 			prof.Stop()
-			//prof, err := NewProf(memProfile, cpuProfile)
-			//if err != nil {
-			//	log.Fatal(err)
-			//}
-			//prof.Start()
+			// only restart the profile for CPU profiles
+			if cpuProfile == "" {
+				continue
+			}
+			prof, err := NewProf(memProfile, cpuProfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			prof.Start()
 		}
 	}()
 
