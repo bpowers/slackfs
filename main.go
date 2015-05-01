@@ -57,8 +57,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	var debugFn func(msg interface{})
 	if *verbose {
-		fuse.Debug = debug
+		debugFn = debug
 	}
 
 	mountpoint := flag.Arg(0)
@@ -103,7 +104,7 @@ func main() {
 	}
 	defer c.Close()
 
-	err = fs.Serve(c, conn.super)
+	err = fs.Serve(c, conn.super, debugFn)
 	if err != nil {
 		log.Fatal(err)
 	}
