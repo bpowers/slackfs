@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"bazil.org/fuse"
+	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
 	"golang.org/x/net/context"
 )

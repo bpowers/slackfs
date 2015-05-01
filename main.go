@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
+	"github.com/bpowers/fuse"
+	"github.com/bpowers/fuse/fs"
 )
 
 const usage = `Usage: %s [OPTION...] MOUNTPOINT
