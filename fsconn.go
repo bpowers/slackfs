@@ -95,23 +95,18 @@ func NewOfflineFSConn(infoPath string) (*FSConn, error) {
 }
 
 func (fs *FSConn) initUsers(parent *DirNode) (err error) {
-	fs.users, err = NewDirSet(fs.super.root, "users", fs)
+	fs.users, err = NewDirSet(fs.super.root, "users", NewUserDir, fs)
 	if err != nil {
 		return fmt.Errorf("NewDirSet('users'): %s", err)
 	}
 
-	userParent := fs.users.Container()
 	for _, u := range fs.info.Users {
 		if u.Deleted {
 			continue
 		}
 		up := new(slack.User)
 		*up = u
-		ud, err := NewUserDir(userParent, up)
-		if err != nil {
-			return fmt.Errorf("NewUserDir(%s): %s", up.Id, err)
-		}
-		err = fs.users.Add(u.Id, u.Name, ud)
+		err = fs.users.Add(u.Id, u.Name, up)
 		if err != nil {
 			return fmt.Errorf("Add(%s): %s", up.Id, err)
 		}
@@ -122,20 +117,15 @@ func (fs *FSConn) initUsers(parent *DirNode) (err error) {
 }
 
 func (fs *FSConn) initChannels(parent *DirNode) (err error) {
-	fs.channels, err = NewDirSet(fs.super.root, "channels", fs)
+	fs.channels, err = NewDirSet(fs.super.root, "channels", NewChannelDir, fs)
 	if err != nil {
 		return fmt.Errorf("NewDirSet('channels'): %s", err)
 	}
 
-	chanParent := fs.channels.Container()
 	for _, c := range fs.info.Channels {
 		cp := new(Channel)
 		cp.Channel = c
-		cd, err := NewChannelDir(chanParent, cp)
-		if err != nil {
-			return fmt.Errorf("NewChanDir(%s): %s", cp.Id, err)
-		}
-		err = fs.channels.Add(c.Id, c.Name, cd)
+		err = fs.channels.Add(c.Id, c.Name, cp)
 		if err != nil {
 			return fmt.Errorf("Add(%s): %s", cp.Id, err)
 		}
@@ -146,20 +136,15 @@ func (fs *FSConn) initChannels(parent *DirNode) (err error) {
 }
 
 func (fs *FSConn) initGroups(parent *DirNode) (err error) {
-	fs.groups, err = NewDirSet(fs.super.root, "groups", fs)
+	fs.groups, err = NewDirSet(fs.super.root, "groups", NewGroupDir, fs)
 	if err != nil {
 		return fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
 
-	groupParent := fs.groups.Container()
 	for _, g := range fs.info.Groups {
 		gp := new(Group)
 		gp.Group = g
-		gd, err := NewGroupDir(groupParent, gp)
-		if err != nil {
-			return fmt.Errorf("NewChanDir(%s): %s", gp.Id, err)
-		}
-		err = fs.groups.Add(g.Id, g.Name, gd)
+		err = fs.groups.Add(g.Id, g.Name, gp)
 		if err != nil {
 			return fmt.Errorf("Add(%s): %s", gp.Id, err)
 		}
@@ -177,7 +162,7 @@ func (fs *FSConn) UpdateUser(id string) {
 
 	userDir := fs.users.LookupId(id)
 	if userDir == nil {
-		log.Printf("added new user %s (%s)", id, u.Name)
+		log.Printf("TODO: add new user %s (%s)", id, u.Name)
 		// FIXME(bp) fs.users.Add() it
 		return
 	}

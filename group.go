@@ -74,8 +74,12 @@ var groupAttrs = []AttrFactory{
 	newGroupWrite,
 }
 
-func NewGroupDir(parent *DirNode, g *Group) (*DirNode, error) {
-	dir, err := NewDirNode(parent, g.Id, g)
+func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
+	g, ok := priv.(*Group)
+	if !ok {
+		return nil, fmt.Errorf("NewGroupDir called w non-group: %#v", priv)
+	}
+	dir, err := NewDirNode(parent, id, priv)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}

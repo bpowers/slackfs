@@ -92,14 +92,19 @@ var channelAttrs = []AttrFactory{
 	newChannelWrite,
 }
 
-func NewChannelDir(parent *DirNode, g *Channel) (*DirNode, error) {
-	dir, err := NewDirNode(parent, g.Id, g)
+func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
+	c, ok := priv.(*Channel)
+	if !ok {
+		return nil, fmt.Errorf("NewChannelDir called w non-chan: %#v", priv)
+	}
+
+	dir, err := NewDirNode(parent, id, priv)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
 	for _, attrFactory := range channelAttrs {
-		n, err := attrFactory(dir, g)
+		n, err := attrFactory(dir, c)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}

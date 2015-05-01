@@ -102,8 +102,12 @@ var userAttrs = []AttrFactory{
 	newUserIsBot,
 }
 
-func NewUserDir(parent *DirNode, u *slack.User) (*DirNode, error) {
-	dir, err := NewDirNode(parent, u.Id, u)
+func NewUserDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
+	u, ok := priv.(*slack.User)
+	if !ok {
+		return nil, fmt.Errorf("NewUserDir called w non-group: %#v", priv)
+	}
+	dir, err := NewDirNode(parent, id, u)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}

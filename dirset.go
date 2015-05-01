@@ -8,17 +8,22 @@ import (
 	"fmt"
 )
 
+// DirCreator matches the signature of New{Channel,Group,IM}Dir
+type DirCreator func(parent *DirNode, name string, priv interface{}) (*DirNode, error)
+
 type DirSet struct {
 	dn      *DirNode // us
 	parent  *DirNode
 	byName  *DirNode // by-name child dir
 	byId    *DirNode // by-id child dir
+	create  DirCreator
 	objDirs map[string]*DirNode
 	objSyms map[string]*SymlinkNode
 }
 
-func NewDirSet(parent *DirNode, name string, priv interface{}) (ds *DirSet, err error) {
+func NewDirSet(parent *DirNode, name string, create DirCreator, priv interface{}) (ds *DirSet, err error) {
 	ds = new(DirSet)
+	ds.create = create
 	ds.dn, err = NewDirNode(parent, name, priv)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode('%s'): %s", name, err)
@@ -46,7 +51,12 @@ func (ds *DirSet) Container() *DirNode {
 	return ds.byId
 }
 
-func (ds *DirSet) Add(id, name string, child *DirNode) error {
+func (ds *DirSet) Add(id, name string, priv interface{}) error {
+	child, err := (ds.create)(ds.byId, id, priv)
+	if err != nil {
+		return fmt.Errorf("ds.create(%s): %s", id, err)
+	}
+
 	ds.objDirs[id] = child
 	s, err := NewSymlinkNode(ds.byName, name, "../by-id/"+id, child)
 	if err != nil {
