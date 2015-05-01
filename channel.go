@@ -17,10 +17,10 @@ type channelCtlNode struct {
 	AttrNode
 }
 
-func newChannelCtl(parent *DirNode, priv interface{}) (INode, error) {
+func newChannelCtl(parent *DirNode) (INode, error) {
 	name := "ctl"
 	n := new(channelCtlNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -40,10 +40,10 @@ type channelWriteNode struct {
 	AttrNode
 }
 
-func newChannelWrite(parent *DirNode, priv interface{}) (INode, error) {
+func newChannelWrite(parent *DirNode) (INode, error) {
 	name := "write"
 	n := new(channelWriteNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -55,7 +55,7 @@ func (n *channelWriteNode) Update() {
 }
 
 func (n *channelWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	g, ok := n.priv.(*Channel)
+	g, ok := n.parent.priv.(*Channel)
 	if !ok {
 		log.Printf("priv is not channel")
 		return fuse.ENOSYS
@@ -75,7 +75,7 @@ func writeChanCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) erro
 }
 
 func writeChanWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) error {
-	ch, ok := n.priv.(*Channel)
+	ch, ok := n.parent.priv.(*Channel)
 	if !ok {
 		log.Printf("priv is not chan")
 		return fuse.ENOSYS
@@ -93,8 +93,7 @@ var channelAttrs = []AttrFactory{
 }
 
 func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
-	c, ok := priv.(*Channel)
-	if !ok {
+	if _, ok := priv.(*Channel); !ok {
 		return nil, fmt.Errorf("NewChannelDir called w non-chan: %#v", priv)
 	}
 
@@ -104,7 +103,7 @@ func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, erro
 	}
 
 	for _, attrFactory := range channelAttrs {
-		n, err := attrFactory(dir, c)
+		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}

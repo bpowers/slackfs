@@ -14,10 +14,10 @@ type userIdNode struct {
 	AttrNode
 }
 
-func newUserId(parent *DirNode, priv interface{}) (INode, error) {
+func newUserId(parent *DirNode) (INode, error) {
 	name := "id"
 	n := new(userIdNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -34,10 +34,10 @@ type userNameNode struct {
 	AttrNode
 }
 
-func newUserName(parent *DirNode, priv interface{}) (INode, error) {
+func newUserName(parent *DirNode) (INode, error) {
 	name := "name"
 	n := new(userNameNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -54,10 +54,10 @@ type userPresenceNode struct {
 	AttrNode
 }
 
-func newUserPresence(parent *DirNode, priv interface{}) (INode, error) {
+func newUserPresence(parent *DirNode) (INode, error) {
 	name := "presence"
 	n := new(userPresenceNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -74,10 +74,10 @@ type userIsBotNode struct {
 	AttrNode
 }
 
-func newUserIsBot(parent *DirNode, priv interface{}) (INode, error) {
+func newUserIsBot(parent *DirNode) (INode, error) {
 	name := "is-bot"
 	n := new(userIsBotNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -103,17 +103,17 @@ var userAttrs = []AttrFactory{
 }
 
 func NewUserDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
-	u, ok := priv.(*slack.User)
-	if !ok {
+	if _, ok := priv.(*slack.User); !ok {
 		return nil, fmt.Errorf("NewUserDir called w non-group: %#v", priv)
 	}
-	dir, err := NewDirNode(parent, id, u)
+
+	dir, err := NewDirNode(parent, id, priv)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
 	for _, attrFactory := range userAttrs {
-		n, err := attrFactory(dir, nil)
+		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}

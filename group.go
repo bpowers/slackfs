@@ -17,10 +17,10 @@ type groupCtlNode struct {
 	AttrNode
 }
 
-func newGroupCtl(parent *DirNode, priv interface{}) (INode, error) {
+func newGroupCtl(parent *DirNode) (INode, error) {
 	name := "ctl"
 	n := new(groupCtlNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -40,10 +40,10 @@ type groupWriteNode struct {
 	AttrNode
 }
 
-func newGroupWrite(parent *DirNode, priv interface{}) (INode, error) {
+func newGroupWrite(parent *DirNode) (INode, error) {
 	name := "write"
 	n := new(groupWriteNode)
-	if err := n.AttrNode.Node.Init(parent, name, priv); err != nil {
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
 		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
 	}
 	n.Update()
@@ -55,7 +55,7 @@ func (n *groupWriteNode) Update() {
 }
 
 func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	g, ok := n.priv.(*Group)
+	g, ok := n.parent.priv.(*Group)
 	if !ok {
 		log.Printf("priv is not group")
 		return fuse.ENOSYS
@@ -75,17 +75,17 @@ var groupAttrs = []AttrFactory{
 }
 
 func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
-	g, ok := priv.(*Group)
-	if !ok {
+	if _, ok := priv.(*Group); !ok {
 		return nil, fmt.Errorf("NewGroupDir called w non-group: %#v", priv)
 	}
+
 	dir, err := NewDirNode(parent, id, priv)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
 	for _, attrFactory := range groupAttrs {
-		n, err := attrFactory(dir, g)
+		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)
 		}

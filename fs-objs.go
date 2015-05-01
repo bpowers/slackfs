@@ -223,7 +223,7 @@ func (sn *SymlinkNode) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) 
 	return sn.path, nil
 }
 
-type AttrFactory func(parent *DirNode, priv interface{}) (INode, error)
+type AttrFactory func(parent *DirNode) (INode, error)
 
 type AttrNode struct {
 	Node
