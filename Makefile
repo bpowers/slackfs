@@ -1,6 +1,7 @@
 
 MNT := /tmp/slack
 TOKEN := $(shell cat ~/.slack | cut -d ' ' -f 3)
+INFO ?= info.json
 
 all: run
 
@@ -11,10 +12,10 @@ build:
 	go build
 
 run: unmount build
-	./slackfs  -token $(TOKEN) $(MNT)
+	./slackfs $(OPTIONS) -token $(TOKEN) $(MNT)
 
 run-offline: unmount build
-	./slackfs -offline info.json -token $(TOKEN) $(MNT)
+	./slackfs $(OPTIONS) -offline $(INFO) -token $(TOKEN) $(MNT)
 
 update-offline-info:
 	curl "https://slack.com/api/rtm.start?token=$(TOKEN)" | pretty >info.json
