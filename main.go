@@ -78,15 +78,6 @@ func main() {
 	go func() {
 		for range sigChan {
 			prof.Stop()
-			// only restart the profile for CPU profiles
-			if cpuProfile == "" {
-				continue
-			}
-			prof, err := NewProf(memProfile, cpuProfile)
-			if err != nil {
-				log.Fatal(err)
-			}
-			prof.Start()
 		}
 	}()
 
