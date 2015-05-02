@@ -154,13 +154,15 @@ type UserSet struct {
 	sync.Mutex
 	objs map[string]*User
 	ds   *DirSet
+	conn *FSConn
 }
 
-func NewUserSet(name string, fs *FSConn, create DirCreator, users []*User) (*UserSet, error) {
+func NewUserSet(name string, conn *FSConn, create DirCreator, users []*User) (*UserSet, error) {
 	var err error
 	us := new(UserSet)
+	us.conn = conn
 	us.objs = make(map[string]*User)
-	us.ds, err = NewDirSet(fs.super.root, name, create, fs)
+	us.ds, err = NewDirSet(conn.super.root, name, create, conn)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
@@ -198,13 +200,15 @@ type RoomSet struct {
 	sync.Mutex
 	objs map[string]Room
 	ds   *DirSet
+	conn *FSConn
 }
 
-func NewRoomSet(name string, fs *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
+func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
 	var err error
 	rs := new(RoomSet)
+	rs.conn = conn
 	rs.objs = make(map[string]Room)
-	rs.ds, err = NewDirSet(fs.super.root, name, create, fs)
+	rs.ds, err = NewDirSet(conn.super.root, name, create, conn)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
