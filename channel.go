@@ -128,6 +128,7 @@ func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, erro
 	}
 
 	// TODO(bp) session file
+	// TODO(bp) spawn channel worker goroutine
 
 	return dir, nil
 }
