@@ -16,7 +16,15 @@ import (
 	"github.com/nlopes/slack"
 )
 
-type IdNamer interface {
+type EventHandler interface {
+	Event(evt slack.SlackEvent) (handled bool)
+}
+
+type Room interface {
+	EventHandler
+	IsOpen() bool
+	//Open()  // maybe?
+	//Close() // maybe?
 	Id() string
 	Name() string
 }
@@ -33,31 +41,6 @@ type FSConn struct {
 	users    *UserSet
 	channels *RoomSet
 	groups   *RoomSet
-}
-
-type EventHandler interface {
-	Event(evt slack.SlackEvent) (handled bool)
-}
-
-type Room interface {
-	EventHandler
-	IsOpen() bool
-	//Open()  // maybe?
-	//Close() // maybe?
-	Id() string
-	Name() string
-}
-
-type UserSet struct {
-	sync.Mutex
-	objs map[string]*User
-	ds   *DirSet
-}
-
-type RoomSet struct {
-	sync.Mutex
-	objs map[string]Room
-	ds   *DirSet
 }
 
 // shared by offline/offline public New functions
@@ -138,68 +121,6 @@ func NewOfflineFSConn(infoPath string) (*FSConn, error) {
 	return newFSConn("", infoPath)
 }
 
-func NewUserSet(name string, fs *FSConn, create DirCreator, users []*User) (*UserSet, error) {
-	var err error
-	us := new(UserSet)
-	us.objs = make(map[string]*User)
-	us.ds, err = NewDirSet(fs.super.root, name, create, fs)
-	if err != nil {
-		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
-	}
-
-	for _, user := range users {
-		err = us.ds.Add(user.Id, user.Name, user)
-		if err != nil {
-			return nil, fmt.Errorf("Add(%s): %s", user.Id, err)
-		}
-	}
-
-	us.ds.Activate()
-	return us, nil
-}
-
-func NewRoomSet(name string, fs *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
-	var err error
-	rs := new(RoomSet)
-	rs.objs = make(map[string]Room)
-	rs.ds, err = NewDirSet(fs.super.root, name, create, fs)
-	if err != nil {
-		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
-	}
-
-	for _, room := range rooms {
-		err = rs.ds.Add(room.Id(), room.Name(), room)
-		if err != nil {
-			return nil, fmt.Errorf("Add(%s): %s", room.Id(), err)
-		}
-	}
-
-	rs.ds.Activate()
-	return rs, nil
-}
-
-func (rs *UserSet) Event(evt slack.SlackEvent) bool {
-	/*	userDir := fs.users.LookupId(id)
-		if userDir == nil {
-			return
-		}
-
-		userDir.mu.Lock()
-		defer userDir.mu.Unlock()
-		userDir.priv.(*User).Presence = presence
-		for _, child := range userDir.children {
-			if updater, ok := child.(Updater); ok && child.Name() == "presence" {
-				updater.Update()
-			}
-		}
-	*/
-	return false
-}
-
-func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
-	return false
-}
-
 func (conn *FSConn) routeIncomingEvents() {
 	for {
 		msg := <-conn.in
@@ -227,4 +148,78 @@ func (fs *FSConn) Send(txtBytes []byte, id string) error {
 	// TODO(bp) add this message to the session buffer, after we
 	// get an ok
 	return err
+}
+
+type UserSet struct {
+	sync.Mutex
+	objs map[string]*User
+	ds   *DirSet
+}
+
+func NewUserSet(name string, fs *FSConn, create DirCreator, users []*User) (*UserSet, error) {
+	var err error
+	us := new(UserSet)
+	us.objs = make(map[string]*User)
+	us.ds, err = NewDirSet(fs.super.root, name, create, fs)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
+	}
+
+	for _, user := range users {
+		err = us.ds.Add(user.Id, user.Name, user)
+		if err != nil {
+			return nil, fmt.Errorf("Add(%s): %s", user.Id, err)
+		}
+	}
+
+	us.ds.Activate()
+	return us, nil
+}
+
+func (rs *UserSet) Event(evt slack.SlackEvent) bool {
+	/*	userDir := fs.users.LookupId(id)
+		if userDir == nil {
+			return
+		}
+
+		userDir.mu.Lock()
+		defer userDir.mu.Unlock()
+		userDir.priv.(*User).Presence = presence
+		for _, child := range userDir.children {
+			if updater, ok := child.(Updater); ok && child.Name() == "presence" {
+				updater.Update()
+			}
+		}
+	*/
+	return false
+}
+
+type RoomSet struct {
+	sync.Mutex
+	objs map[string]Room
+	ds   *DirSet
+}
+
+func NewRoomSet(name string, fs *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
+	var err error
+	rs := new(RoomSet)
+	rs.objs = make(map[string]Room)
+	rs.ds, err = NewDirSet(fs.super.root, name, create, fs)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
+	}
+
+	for _, room := range rooms {
+		err = rs.ds.Add(room.Id(), room.Name(), room)
+		if err != nil {
+			return nil, fmt.Errorf("Add(%s): %s", room.Id(), err)
+		}
+	}
+
+	rs.ds.Activate()
+	return rs, nil
+}
+
+func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
+	return false
 }
