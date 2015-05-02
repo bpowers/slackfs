@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nlopes/slack"
@@ -28,9 +29,35 @@ type FSConn struct {
 	in   chan slack.SlackEvent
 	info *slack.Info
 
-	users    *DirSet
-	channels *DirSet
-	groups   *DirSet
+	sinks    []EventHandler
+	users    *UserSet
+	channels *RoomSet
+	groups   *RoomSet
+}
+
+type EventHandler interface {
+	Event(evt slack.SlackEvent) (handled bool)
+}
+
+type Room interface {
+	EventHandler
+	IsOpen() bool
+	//Open()  // maybe?
+	//Close() // maybe?
+	Id() string
+	Name() string
+}
+
+type UserSet struct {
+	sync.Mutex
+	objs map[string]*User
+	ds   *DirSet
+}
+
+type RoomSet struct {
+	sync.Mutex
+	objs map[string]Room
+	ds   *DirSet
 }
 
 // shared by offline/offline public New functions
@@ -59,22 +86,39 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 
 	conn.info = &info
 	conn.in = make(chan slack.SlackEvent)
+	conn.sinks = make([]EventHandler, 0, 4)
 	conn.super = NewSuper()
 
-	root := conn.super.GetRoot()
+	users := make([]*User, 0, len(conn.info.Users))
+	for _, sUser := range conn.info.Users {
+		users = append(users, &User{sUser, conn})
+	}
+	conn.users, err = NewUserSet("users", conn, NewUserDir, users)
+	if err != nil {
+		return nil, fmt.Errorf("NewUserSet: %s", err)
+	}
 
-	err = conn.initUsers(root)
-	if err != nil {
-		return nil, fmt.Errorf("initUsers: %s", err)
+	chans := make([]Room, 0, len(conn.info.Channels))
+	for _, sChan := range conn.info.Channels {
+		chans = append(chans, &Channel{sChan, conn})
 	}
-	err = conn.initChannels(root)
+	conn.channels, err = NewRoomSet("channels", conn, NewChannelDir, chans)
 	if err != nil {
-		return nil, fmt.Errorf("initChannels: %s", err)
+		return nil, fmt.Errorf("NewRoomSet: %s", err)
 	}
-	err = conn.initGroups(root)
+
+	groups := make([]Room, 0, len(conn.info.Groups))
+	for _, sGroup := range conn.info.Groups {
+		groups = append(groups, &Group{sGroup, conn})
+	}
+	conn.groups, err = NewRoomSet("groups", conn, NewGroupDir, groups)
 	if err != nil {
-		return nil, fmt.Errorf("initChannels: %s", err)
+		return nil, fmt.Errorf("NewRoomSet: %s", err)
 	}
+
+	// simplify dispatch code by keeping track of event handlers
+	// in a slice.
+	conn.sinks = append(conn.sinks, conn.channels, conn.groups, conn.users)
 
 	// only spawn goroutines in online mode
 	if infoPath == "" {
@@ -94,135 +138,120 @@ func NewOfflineFSConn(infoPath string) (*FSConn, error) {
 	return newFSConn("", infoPath)
 }
 
-func (fs *FSConn) initUsers(parent *DirNode) (err error) {
-	fs.users, err = NewDirSet(fs.super.root, "users", NewUserDir, fs)
+/*
+
+fs
+- users    <-   eventhandler
+- groups    <- RoomContainer instance
+- ims       <- RoomContainer instance
+- channels  <- RoomContainer instance
+  - []Room
+
+
+FS -> RoomContainer
+- AddRoom()
+
+RoomContainer -> Room:
+- IsVisible (show dir)
+- Name
+- Id
+
+Room -> RoomContainer
+- VisibilityChanged (hide/unmount)
+- NameChanged (update symlinks)
+
+
+
+Super (root)
+1:n DirSets (RoomContainer)
+    1:n Dirs (Room)
+
+
+fs needs global map of immutable IDs
+map[Id]*Room
+
+
+
+
+root
+-
+
+*/
+
+func NewUserSet(name string, fs *FSConn, create DirCreator, users []*User) (*UserSet, error) {
+	var err error
+	us := new(UserSet)
+	us.objs = make(map[string]*User)
+	us.ds, err = NewDirSet(fs.super.root, name, create, fs)
 	if err != nil {
-		return fmt.Errorf("NewDirSet('users'): %s", err)
+		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
 
-	for _, u := range fs.info.Users {
-		if u.Deleted {
-			continue
-		}
-		up := new(slack.User)
-		*up = u
-		err = fs.users.Add(u.Id, u.Name, up)
+	for _, user := range users {
+		err = us.ds.Add(user.Id, user.Name, user)
 		if err != nil {
-			return fmt.Errorf("Add(%s): %s", up.Id, err)
+			return nil, fmt.Errorf("Add(%s): %s", user.Id, err)
 		}
 	}
 
-	fs.users.Activate()
-	return nil
+	us.ds.Activate()
+	return us, nil
 }
 
-func (fs *FSConn) initChannels(parent *DirNode) (err error) {
-	fs.channels, err = NewDirSet(fs.super.root, "channels", NewChannelDir, fs)
+func NewRoomSet(name string, fs *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
+	var err error
+	rs := new(RoomSet)
+	rs.objs = make(map[string]Room)
+	rs.ds, err = NewDirSet(fs.super.root, name, create, fs)
 	if err != nil {
-		return fmt.Errorf("NewDirSet('channels'): %s", err)
+		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
 
-	for _, c := range fs.info.Channels {
-		cp := new(Channel)
-		cp.Channel = c
-		err = fs.channels.Add(c.Id, c.Name, cp)
+	for _, room := range rooms {
+		err = rs.ds.Add(room.Id(), room.Name(), room)
 		if err != nil {
-			return fmt.Errorf("Add(%s): %s", cp.Id, err)
+			return nil, fmt.Errorf("Add(%s): %s", room.Id(), err)
 		}
 	}
 
-	fs.channels.Activate()
-	return nil
+	rs.ds.Activate()
+	return rs, nil
 }
 
-func (fs *FSConn) initGroups(parent *DirNode) (err error) {
-	fs.groups, err = NewDirSet(fs.super.root, "groups", NewGroupDir, fs)
-	if err != nil {
-		return fmt.Errorf("NewDirSet('groups'): %s", err)
-	}
-
-	for _, g := range fs.info.Groups {
-		gp := new(Group)
-		gp.Group = g
-		err = fs.groups.Add(g.Id, g.Name, gp)
-		if err != nil {
-			return fmt.Errorf("Add(%s): %s", gp.Id, err)
+func (rs *UserSet) Event(evt slack.SlackEvent) bool {
+	/*	userDir := fs.users.LookupId(id)
+		if userDir == nil {
+			return
 		}
-	}
 
-	fs.groups.Activate()
-	return nil
-}
-
-func (fs *FSConn) UpdateUser(id string) {
-	u, err := fs.api.GetUserInfo(id)
-	if err != nil {
-		log.Printf("UpdateUser: GetUserInfo('%s'): %s", id, err)
-	}
-
-	userDir := fs.users.LookupId(id)
-	if userDir == nil {
-		log.Printf("TODO: add new user %s (%s)", id, u.Name)
-		// FIXME(bp) fs.users.Add() it
-		return
-	}
-
-	userDir.mu.Lock()
-	defer userDir.mu.Unlock()
-	userDir.priv = u
-	log.Printf("updating %#v", u)
-	for _, child := range userDir.children {
-		if updater, ok := child.(Updater); ok {
-			log.Printf("is updater %s", child.Name())
-			updater.Update()
-		}
-	}
-	log.Printf("updated user %s", u.Name)
-}
-
-func (fs *FSConn) UpdatePresence(id, presence string) {
-	userDir := fs.users.LookupId(id)
-	if userDir == nil {
-		return
-	}
-
-	userDir.mu.Lock()
-	defer userDir.mu.Unlock()
-	userDir.priv.(*slack.User).Presence = presence
-	for _, child := range userDir.children {
-		if updater, ok := child.(Updater); ok && child.Name() == "presence" {
-			updater.Update()
-		}
-	}
-}
-
-func (fs *FSConn) GetUser(id string) (*slack.User, bool) {
-	userDir := fs.users.LookupId(id)
-	if userDir == nil {
-		return nil, false
-	}
-	u, ok := userDir.priv.(*slack.User)
-	return u, ok
-}
-
-func (fs *FSConn) routeIncomingEvents() {
-	for {
-		msg := <-fs.in
-
-		switch ev := msg.Data.(type) {
-		case *slack.MessageEvent:
-			fmt.Printf("msg\t%s\t%s\t%s\n", ev.Timestamp, ev.UserId, ev.Text)
-		case *slack.PresenceChangeEvent:
-			// don't block processing of other events
-			// while updating the user
-			go fs.UpdatePresence(ev.UserId, ev.Presence)
-			name := "<unknown>"
-			if u, ok := fs.GetUser(ev.UserId); ok {
-				name = u.Name
+		userDir.mu.Lock()
+		defer userDir.mu.Unlock()
+		userDir.priv.(*User).Presence = presence
+		for _, child := range userDir.children {
+			if updater, ok := child.(Updater); ok && child.Name() == "presence" {
+				updater.Update()
 			}
-			fmt.Printf("presence\t%s\t%s\n", name, ev.Presence)
-		case *slack.SlackWSError:
-			fmt.Printf("err: %s\n", ev)
+		}
+	*/
+	return false
+}
+
+func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
+	return false
+}
+
+func (conn *FSConn) routeIncomingEvents() {
+	for {
+		msg := <-conn.in
+
+		var ok bool
+		for _, handler := range conn.sinks {
+			if ok = handler.Event(msg); ok {
+				break
+			}
+		}
+		if !ok {
+			fmt.Printf("unhandled msg: %#v\n", msg)
 		}
 	}
 }

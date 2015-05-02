@@ -55,18 +55,35 @@ func (n *channelWriteNode) Update() {
 }
 
 func (n *channelWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	g, ok := n.parent.priv.(*Channel)
+	c, ok := n.parent.priv.(*Channel)
 	if !ok {
 		log.Printf("priv is not channel")
 		return fuse.ENOSYS
 	}
 
-	return g.fs.Send(req.Data, g.Id)
+	return c.conn.Send(req.Data, c.Id())
 }
 
 type Channel struct {
 	slack.Channel
-	fs *FSConn
+	conn *FSConn
+}
+
+func (c *Channel) Id() string {
+	return c.Channel.Id
+}
+
+func (c *Channel) Name() string {
+	return c.Channel.Name
+}
+
+func (c *Channel) IsOpen() bool {
+	return c.Channel.IsOpen
+}
+
+func (c *Channel) Event(evt slack.SlackEvent) (handled bool) {
+	// TODO(bp) implement
+	return false
 }
 
 func writeChanCtl(ctx context.Context, an *AttrNode, off int64, msg []byte) error {
@@ -81,7 +98,7 @@ func writeChanWrite(ctx context.Context, n *AttrNode, off int64, msg []byte) err
 		return fuse.ENOSYS
 	}
 
-	return ch.fs.Send(msg, ch.Id)
+	return ch.conn.Send(msg, ch.Id())
 }
 
 // TODO(bp) conceptually these would be better as FIFOs, but when mode

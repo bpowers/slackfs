@@ -61,12 +61,29 @@ func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp
 		return fuse.ENOSYS
 	}
 
-	return g.fs.Send(req.Data, g.Id)
+	return g.conn.Send(req.Data, g.Id())
 }
 
 type Group struct {
 	slack.Group
-	fs *FSConn
+	conn *FSConn
+}
+
+func (g *Group) Id() string {
+	return g.Group.Id
+}
+
+func (g *Group) Name() string {
+	return g.Group.Name
+}
+
+func (g *Group) IsOpen() bool {
+	return g.Group.IsOpen
+}
+
+func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
+	// TODO(bp) implement
+	return false
 }
 
 var groupAttrs = []AttrFactory{

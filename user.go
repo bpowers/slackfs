@@ -10,6 +10,11 @@ import (
 	"github.com/nlopes/slack"
 )
 
+type User struct {
+	slack.User
+	conn *FSConn
+}
+
 type userIdNode struct {
 	AttrNode
 }
@@ -26,7 +31,7 @@ func newUserId(parent *DirNode) (INode, error) {
 }
 
 func (n *userIdNode) Update() {
-	val := n.parent.priv.(*slack.User).Id + "\n"
+	val := n.parent.priv.(*User).Id + "\n"
 	n.updateCommon(val)
 }
 
@@ -46,7 +51,7 @@ func newUserName(parent *DirNode) (INode, error) {
 }
 
 func (n *userNameNode) Update() {
-	val := n.parent.priv.(*slack.User).Name + "\n"
+	val := n.parent.priv.(*User).Name + "\n"
 	n.updateCommon(val)
 }
 
@@ -66,7 +71,7 @@ func newUserPresence(parent *DirNode) (INode, error) {
 }
 
 func (n *userPresenceNode) Update() {
-	val := n.parent.priv.(*slack.User).Presence + "\n"
+	val := n.parent.priv.(*User).Presence + "\n"
 	n.updateCommon(val)
 }
 
@@ -87,7 +92,7 @@ func newUserIsBot(parent *DirNode) (INode, error) {
 
 func (n *userIsBotNode) Update() {
 	var val string
-	if n.parent.priv.(*slack.User).IsBot {
+	if n.parent.priv.(*User).IsBot {
 		val = "true\n"
 	} else {
 		val = "false\n"
@@ -103,8 +108,8 @@ var userAttrs = []AttrFactory{
 }
 
 func NewUserDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
-	if _, ok := priv.(*slack.User); !ok {
-		return nil, fmt.Errorf("NewUserDir called w non-group: %#v", priv)
+	if _, ok := priv.(*User); !ok {
+		return nil, fmt.Errorf("NewUserDir called w non-user: %#v", priv)
 	}
 
 	dir, err := NewDirNode(parent, id, priv)
