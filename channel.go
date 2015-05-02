@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 	"sync/atomic"
 
 	"github.com/bpowers/fuse"
@@ -20,7 +19,6 @@ type CtlEventType int
 
 const (
 	WorkerStop CtlEventType = iota
-	WorkerFetchSession
 )
 
 type RoomCtlEvent struct {
@@ -29,18 +27,19 @@ type RoomCtlEvent struct {
 
 type Channel struct {
 	slack.Channel
-	conn    *FSConn
-	mu      sync.Mutex
-	cond    sync.Cond // cond.L is initualized to &mu
+	Session
+
+	conn *FSConn
+
+	running uint32 // updated atomically, lock-free read
 	event   chan RoomCtlEvent
-	running uint32
 }
 
 func NewChannel(sc slack.Channel, conn *FSConn) *Channel {
 	c := new(Channel)
 	c.Channel = sc
 	c.conn = conn
-	c.cond.L = &c.mu
+	c.L = &c.mu
 
 	c.event = make(chan RoomCtlEvent)
 
@@ -51,12 +50,17 @@ func NewChannel(sc slack.Channel, conn *FSConn) *Channel {
 
 func (c *Channel) work() {
 	atomic.StoreUint32(&c.running, 1)
+	// we unconditionally start workers for every known channel,
+	// but don't request history for channels we're not a part of.
+	if c.IsOpen() {
+		if err := c.getHistory(c.conn.api, c.Id(), c.LastRead); err != nil {
+			log.Printf("'%s'.getHistory(): %s", c.Name(), err)
+		}
+	}
 outer:
 	for {
 		ev := <-c.event
 		switch ev.Type {
-		case WorkerFetchSession:
-			fmt.Printf("fetch session\n")
 		case WorkerStop:
 			break outer
 		}
@@ -73,7 +77,7 @@ func (c *Channel) Name() string {
 }
 
 func (c *Channel) IsOpen() bool {
-	return c.Channel.IsOpen
+	return c.Channel.IsMember
 }
 
 func (c *Channel) Event(evt slack.SlackEvent) (handled bool) {
@@ -158,22 +162,35 @@ func (an *SessionAttrNode) IsDir() bool {
 	return false
 }
 
+type SessionProvider interface {
+	CurrLen() uint64
+	Bytes(offset int64, size int) ([]byte, error)
+}
+
 type SessionAttrNode struct {
 	Node
 	Mode os.FileMode
+	Size int
 }
 
 func (an *SessionAttrNode) Attr(a *fuse.Attr) {
 	a.Inode = an.ino
 	a.Mode = an.Mode
-	a.Size = 0 // TODO: get from local
+	a.Size = an.parent.priv.(SessionProvider).CurrLen()
 }
 
 func (an *SessionAttrNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	provider := an.parent.priv.(SessionProvider)
 
-	// TODO: get session from parent, blocking until ready
+	frag, err := provider.Bytes(req.Offset, req.Size)
+	if err != nil {
+		return fmt.Errorf("GetBytes(%d, %d): %s", req.Offset, req.Size, err)
+	}
 
-	return fuse.ENOSYS
+	an.Size += len(frag)
+
+	resp.Data = frag
+	return nil
 }
 
 // TODO(bp) conceptually these would be better as FIFOs, but when mode
@@ -202,9 +219,6 @@ func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, erro
 		}
 		n.Activate()
 	}
-
-	// TODO(bp) session file
-	// TODO(bp) spawn channel worker goroutine
 
 	return dir, nil
 }
