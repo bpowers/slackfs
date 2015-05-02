@@ -82,8 +82,8 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	}
 
 	chans := make([]Room, 0, len(conn.info.Channels))
-	for _, sChan := range conn.info.Channels {
-		chans = append(chans, &Channel{sChan, conn})
+	for _, c := range conn.info.Channels {
+		chans = append(chans, NewChannel(c, conn))
 	}
 	conn.channels, err = NewRoomSet("channels", conn, NewChannelDir, chans)
 	if err != nil {
