@@ -138,46 +138,6 @@ func NewOfflineFSConn(infoPath string) (*FSConn, error) {
 	return newFSConn("", infoPath)
 }
 
-/*
-
-fs
-- users    <-   eventhandler
-- groups    <- RoomContainer instance
-- ims       <- RoomContainer instance
-- channels  <- RoomContainer instance
-  - []Room
-
-
-FS -> RoomContainer
-- AddRoom()
-
-RoomContainer -> Room:
-- IsVisible (show dir)
-- Name
-- Id
-
-Room -> RoomContainer
-- VisibilityChanged (hide/unmount)
-- NameChanged (update symlinks)
-
-
-
-Super (root)
-1:n DirSets (RoomContainer)
-    1:n Dirs (Room)
-
-
-fs needs global map of immutable IDs
-map[Id]*Room
-
-
-
-
-root
--
-
-*/
-
 func NewUserSet(name string, fs *FSConn, create DirCreator, users []*User) (*UserSet, error) {
 	var err error
 	us := new(UserSet)
