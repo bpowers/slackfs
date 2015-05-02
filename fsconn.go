@@ -100,8 +100,10 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	}
 
 	// simplify dispatch code by keeping track of event handlers
-	// in a slice.
-	conn.sinks = append(conn.sinks, conn.channels, conn.groups, conn.users)
+	// in a slice.  We (FSConn) are an event sink too - add
+	// ourselves to the list first, so that we can separate
+	// routing logic from connection-level handling logic.
+	conn.sinks = append(conn.sinks, conn, conn.channels, conn.groups, conn.users)
 
 	// only spawn goroutines in online mode
 	if infoPath == "" {
@@ -119,6 +121,15 @@ func NewFSConn(token string) (*FSConn, error) {
 
 func NewOfflineFSConn(infoPath string) (*FSConn, error) {
 	return newFSConn("", infoPath)
+}
+
+func (conn *FSConn) Event(evt slack.SlackEvent) bool {
+	switch evt.Data.(type) {
+	case slack.HelloEvent, slack.LatencyReport:
+		// TODO: keep track of potential disconnects.
+		return true
+	}
+	return false
 }
 
 func (conn *FSConn) routeIncomingEvents() {
@@ -214,6 +225,13 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 	}
 
 	for _, room := range rooms {
+		// filesystem objects are created and destroyed based
+		// on whether we are members of the given room (or in
+		// the case of IMs and groups, whether the room is
+		// 'open'.
+		if !room.IsOpen() {
+			continue
+		}
 		err = rs.ds.Add(room.Id(), room.Name(), room)
 		if err != nil {
 			return nil, fmt.Errorf("Add(%s): %s", room.Id(), err)
