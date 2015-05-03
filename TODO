@@ -1,13 +1,10 @@
 implement ch formatting
-implement 'read' notifications back to slack server
 
-update user objects on name changes
+implement 'read' notifications back to slack server (?)
 
 implement channels ctl (join/leave)
 implement ch/write.pre
 implement ch/history.json
-
-implement direct messages
 
 document locking order
 
