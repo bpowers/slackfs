@@ -154,7 +154,7 @@ type SessionAttrNode struct {
 }
 
 func (an *SessionAttrNode) Getattr(ctx context.Context, req *fuse.GetattrRequest, resp *fuse.GetattrResponse) error {
-	resp.AttrValid = 1 * time.Second
+	resp.AttrValid = 200 * time.Millisecond
 	an.Attr(&resp.Attr)
 	return nil
 }
