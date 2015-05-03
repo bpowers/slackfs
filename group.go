@@ -188,7 +188,5 @@ func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error)
 		n.Activate()
 	}
 
-	// TODO(bp) session file
-
 	return dir, nil
 }
