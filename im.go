@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/nlopes/slack"
+	"github.com/bpowers/slack"
 )
 
 type IM struct {

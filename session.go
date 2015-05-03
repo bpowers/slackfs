@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/bpowers/fuse"
-	"github.com/nlopes/slack"
+	"github.com/bpowers/slack"
 	"golang.org/x/net/context"
 )
 

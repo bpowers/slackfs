@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nlopes/slack"
+	"github.com/bpowers/slack"
 )
 
 type User struct {

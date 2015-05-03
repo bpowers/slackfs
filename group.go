@@ -7,7 +7,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/nlopes/slack"
+	"github.com/bpowers/slack"
 )
 
 type Group struct {

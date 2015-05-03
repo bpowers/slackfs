@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nlopes/slack"
+	"github.com/bpowers/slack"
 )
 
 type EventHandler interface {
