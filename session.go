@@ -226,6 +226,10 @@ type SessionProvider interface {
 	Bytes(offset int64, size int) ([]byte, error)
 }
 
+type SessionWriter interface {
+	Write([]byte) error
+}
+
 type SessionAttrNode struct {
 	Node
 	Size int
@@ -255,4 +259,43 @@ func (an *SessionAttrNode) Read(ctx context.Context, req *fuse.ReadRequest, resp
 
 	resp.Data = frag
 	return nil
+}
+
+type sessionWriteNode struct {
+	AttrNode
+}
+
+func newSessionWrite(parent *DirNode) (INode, error) {
+	name := "write"
+	n := new(sessionWriteNode)
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0222
+	return n, nil
+}
+
+func (n *sessionWriteNode) Update() {
+}
+
+func (n *sessionWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	g, ok := n.parent.priv.(SessionWriter)
+	if !ok {
+		log.Printf("priv is not SessionWriter")
+		return fuse.ENOSYS
+	}
+
+	resp.Size = len(req.Data)
+	go g.Write(req.Data)
+
+	return nil
+}
+
+func (n *sessionWriteNode) Activate() error {
+	if n.parent == nil {
+		return nil
+	}
+
+	return n.parent.addChild(n)
 }

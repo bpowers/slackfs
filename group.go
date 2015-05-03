@@ -6,11 +6,8 @@ package main
 
 import (
 	"fmt"
-	"log"
 
-	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
-	"golang.org/x/net/context"
 )
 
 type Group struct {
@@ -43,47 +40,8 @@ func (g *Group) IsOpen() bool {
 	return g.Group.IsOpen
 }
 
-type groupWriteNode struct {
-	AttrNode
-}
-
-func newGroupWrite(parent *DirNode) (INode, error) {
-	name := "write"
-	n := new(groupWriteNode)
-	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
-		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
-	}
-	n.Update()
-	n.mode = 0222
-	return n, nil
-}
-
-func (n *groupWriteNode) Update() {
-}
-
-func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	g, ok := n.parent.priv.(*Group)
-	if !ok {
-		log.Printf("priv is not group")
-		return fuse.ENOSYS
-	}
-
-	resp.Size = len(req.Data)
-	go g.Write(req.Data)
-
-	return nil
-}
-
-func (n *groupWriteNode) Activate() error {
-	if n.parent == nil {
-		return nil
-	}
-
-	return n.parent.addChild(n)
-}
-
 var groupAttrs = []AttrFactory{
-	newGroupWrite,
+	newSessionWrite,
 	newSession,
 }
 

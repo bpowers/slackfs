@@ -6,11 +6,8 @@ package main
 
 import (
 	"fmt"
-	"log"
 
-	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
-	"golang.org/x/net/context"
 )
 
 type Channel struct {
@@ -43,42 +40,11 @@ func (c *Channel) IsOpen() bool {
 	return c.Channel.IsMember
 }
 
-type channelWriteNode struct {
-	AttrNode
-}
-
-func newChannelWrite(parent *DirNode) (INode, error) {
-	name := "write"
-	n := new(channelWriteNode)
-	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
-		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
-	}
-	n.Update()
-	n.mode = 0222
-	return n, nil
-}
-
-func (n *channelWriteNode) Update() {
-}
-
-func (n *channelWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	c, ok := n.parent.priv.(*Channel)
-	if !ok {
-		log.Printf("priv is not channel")
-		return fuse.ENOSYS
-	}
-
-	resp.Size = len(req.Data)
-	go c.Write(req.Data)
-
-	return nil
-}
-
 // TODO(bp) conceptually these would be better as FIFOs, but when mode
 // has os.NamedPipe the writer (bash) hangs on an open() that we never
 // get a fuse request for.
 var channelAttrs = []AttrFactory{
-	newChannelWrite,
+	newSessionWrite,
 	newSession,
 }
 
