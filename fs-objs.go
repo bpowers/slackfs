@@ -252,11 +252,11 @@ func (n *AttrNode) updateCommon(val string) {
 
 func (an *AttrNode) ReadAll(ctx context.Context) ([]byte, error) {
 	// if content is nil, it means we are write-only.
-	content := an.content.Load().(*[]byte)
-	if content == nil {
+	content := an.content.Load()
+	if content == nil || content.(*[]byte) == nil {
 		return nil, fuse.ENOSYS
 	}
-	return *content, nil
+	return *content.(*[]byte), nil
 }
 
 func NewSuper() *Super {
