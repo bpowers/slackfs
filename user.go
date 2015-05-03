@@ -6,13 +6,23 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/nlopes/slack"
 )
 
 type User struct {
 	slack.User
+	mu   sync.Mutex
 	conn *FSConn
+}
+
+func NewUser(su slack.User, conn *FSConn) *User {
+	u := new(User)
+	u.User = su
+	u.conn = conn
+
+	return u
 }
 
 type userIdNode struct {

@@ -73,8 +73,8 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	conn.super = NewSuper()
 
 	users := make([]*User, 0, len(conn.info.Users))
-	for _, sUser := range conn.info.Users {
-		users = append(users, &User{sUser, conn})
+	for _, u := range conn.info.Users {
+		users = append(users, NewUser(u, conn))
 	}
 	conn.users, err = NewUserSet("users", conn, NewUserDir, users)
 	if err != nil {
@@ -179,6 +179,11 @@ func NewUserSet(name string, conn *FSConn, create DirCreator, users []*User) (*U
 	}
 
 	for _, user := range users {
+		us.objs[user.Id] = user
+		// hide deleted users, they're not useful.
+		if user.Deleted {
+			continue
+		}
 		err = us.ds.Add(user.Id, user.Name, user)
 		if err != nil {
 			return nil, fmt.Errorf("Add(%s): %s", user.Id, err)
@@ -189,21 +194,47 @@ func NewUserSet(name string, conn *FSConn, create DirCreator, users []*User) (*U
 	return us, nil
 }
 
-func (rs *UserSet) Event(evt slack.SlackEvent) bool {
-	/*	userDir := fs.users.LookupId(id)
-		if userDir == nil {
-			return
+// on change, lock UserSet, then lock User.  No need to lock DirNode,
+// as it doesn't change (we're not adding/removing child attributes).
+// Updates to Attributes are done through atomic ops.
+func (us *UserSet) Event(evt slack.SlackEvent) bool {
+	switch msg := evt.Data.(type) {
+	case *slack.ManualPresenceChangeEvent:
+		// ignore - when we change our own presence, we get
+		// both a manual and non-manual event, so we handle
+		// this the same way as a presence change for anyone
+		// else.
+		return true
+	case *slack.PresenceChangeEvent:
+		us.Lock()
+		defer us.Unlock()
+
+		user, ok := us.objs[msg.UserId]
+		if !ok {
+			log.Printf("XXX: presence change with no user object: %s", msg.UserId)
+			return true
 		}
 
-		userDir.mu.Lock()
-		defer userDir.mu.Unlock()
-		userDir.priv.(*User).Presence = presence
-		for _, child := range userDir.children {
-			if updater, ok := child.(Updater); ok && child.Name() == "presence" {
-				updater.Update()
+		log.Printf("Presence Change: %s -> %s", user.Name, msg.Presence)
+
+		ud := us.ds.LookupId(msg.UserId)
+		if ud == nil {
+			log.Printf("XXX: presence change for unknown user: %s", msg.UserId)
+			return true
+		}
+
+		user.mu.Lock()
+		defer user.mu.Unlock()
+
+		user.Presence = msg.Presence
+		for _, child := range ud.children {
+			if up, ok := child.(Updater); ok && child.Name() == "presence" {
+				up.Update()
 			}
 		}
-	*/
+
+		return true
+	}
 	return false
 }
 
@@ -225,6 +256,7 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 	}
 
 	for _, room := range rooms {
+		rs.objs[room.Id()] = room
 		// filesystem objects are created and destroyed based
 		// on whether we are members of the given room (or in
 		// the case of IMs and groups, whether the room is

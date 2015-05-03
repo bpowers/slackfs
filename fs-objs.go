@@ -164,7 +164,7 @@ func (an *AttrNode) Activate() error {
 type DirNode struct {
 	Node
 
-	// lock for attribute writes/updates.  Reads are lock-free.
+	// lock only for adding/removing children
 	mu sync.Mutex
 
 	childmap map[string]INode
