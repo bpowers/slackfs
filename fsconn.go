@@ -106,7 +106,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	if infoPath == "" {
 		go conn.ws.HandleIncomingEvents(conn.in)
 		go conn.ws.Keepalive(10 * time.Second)
-		go conn.routeIncomingEvents()
+		go conn.consumeEvents()
 	}
 
 	return conn, nil
@@ -129,19 +129,28 @@ func (conn *FSConn) Event(evt slack.SlackEvent) bool {
 	return false
 }
 
-func (conn *FSConn) routeIncomingEvents() {
+func (conn *FSConn) consumeEvents() {
 	for {
-		msg := <-conn.in
+		evt := <-conn.in
+		go conn.routeEvent(evt)
+	}
+}
 
-		var ok bool
-		for _, handler := range conn.sinks {
-			if ok = handler.Event(msg); ok {
-				break
-			}
+func (conn *FSConn) routeEvent(evt slack.SlackEvent) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("routeEvent panic: %s", err)
 		}
-		if !ok {
-			fmt.Printf("unhandled msg: %#v\n", msg)
+	}()
+
+	var ok bool
+	for _, handler := range conn.sinks {
+		if ok = handler.Event(evt); ok {
+			break
 		}
+	}
+	if !ok {
+		fmt.Printf("unhandled evt: %#v\n", evt)
 	}
 }
 
@@ -272,16 +281,20 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 }
 
 func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
-	switch evt.Data.(type) {
+	rs.Lock()
+	defer rs.Unlock()
+	switch msg := evt.Data.(type) {
 	case slack.AckMessage:
-		rs.Lock()
-		defer rs.Unlock()
 		for _, room := range rs.objs {
 			if ok := room.Event(evt); ok {
 				return true
 			}
 		}
 		return false
+	case *slack.MessageEvent:
+		if r, ok := rs.objs[msg.ChannelId]; ok {
+			return r.Event(evt)
+		}
 	}
 	return false
 }

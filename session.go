@@ -28,11 +28,13 @@ const (
 	WorkerStop CtlEventType = iota
 	WorkerSend
 	WorkerHistory
+	WorkerAppend
 )
 
 type RoomCtlEvent struct {
 	Type CtlEventType
 	Data string
+	Msg  *slack.Message
 }
 
 type Session struct {
@@ -45,6 +47,7 @@ type Session struct {
 
 	initialized bool
 	formatted   bytes.Buffer
+	newestTs    string // most recent timestamp
 }
 
 func (s *Session) CurrLen() uint64 {
@@ -74,7 +77,7 @@ func (s *Session) Bytes(offset int64, size int) ([]byte, error) {
 }
 
 // must be called with s.L held
-func (s *Session) formatMsg(msg slack.Message) error {
+func (s *Session) formatMsg(msg *slack.Message) error {
 	return t.Execute(&s.formatted, msg)
 }
 
@@ -106,12 +109,41 @@ func (s *Session) getHistory(fn historyFn, id, oldest string) error {
 	defer s.L.Unlock()
 
 	for _, msg := range h.Messages {
-		err := s.formatMsg(msg)
+		err := s.formatMsg(&msg)
 		if err != nil {
 			log.Printf("formatMsg(%#v): %s", msg, err)
 		}
 	}
+	s.newestTs = h.Messages[len(h.Messages)-1].Timestamp
 	s.initialized = true
+
+	s.Broadcast()
+
+	return nil
+}
+
+// should only be called from the worker?
+func (s *Session) addMessage(msg *slack.Message) error {
+	s.L.Lock()
+	defer s.L.Unlock()
+	// don't add messages from the websocket until after we've
+	// initialized history.
+	for !s.initialized {
+		log.Printf("waiting to init before recording msg %s", msg.Text)
+		s.Wait()
+	}
+	if msg.Timestamp <= s.newestTs {
+		log.Printf("dropping WS message %s (%s) because it is too old", msg.Timestamp, msg.Text)
+		return nil
+	}
+
+	err := s.formatMsg(msg)
+	if err != nil {
+		log.Printf("formatMsg(%#v): %s", msg, err)
+		return nil
+	}
+	s.newestTs = msg.Timestamp
+
 	s.Broadcast()
 
 	return nil

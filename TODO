@@ -10,3 +10,11 @@ implement ch/history.json
 implement direct messages
 
 document locking order
+
+implement teamjoin + userchange:
+
+unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.TeamJoinEvent)(0xc20878e140)}
+unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.MessageEvent)(0xc208595380)}
+2015/05/03 02:03:25 XXX: presence change with no user object: U04LT2N9N
+unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.UserChangeEvent)(0xc20878e280)}
+unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.UserChangeEvent)(0xc20878e500)}
