@@ -76,15 +76,13 @@ outer:
 			if err := g.getHistory(g.conn.api.GetGroupHistory, g.Id(), timestamp); err != nil {
 				log.Printf("'%s'.getHistory() 2: %s", g.Name(), err)
 			}
-		case WorkerAppend:
-			g.addMessage(ev.Msg)
 		}
 	}
 	atomic.StoreUint32(&g.running, 0)
 }
 
 func (g *Group) Write(msg []byte) error {
-	g.event <- RoomCtlEvent{WorkerSend, string(msg), nil}
+	g.event <- RoomCtlEvent{WorkerSend, string(msg)}
 
 	return nil
 }
@@ -101,10 +99,6 @@ func (g *Group) IsOpen() bool {
 	return g.Group.IsOpen
 }
 
-func (g *Group) AppendMsg(msg *slack.Message) {
-	g.event <- RoomCtlEvent{WorkerAppend, "", msg}
-}
-
 func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
 	switch msg := evt.Data.(type) {
 	case slack.AckMessage:
@@ -113,7 +107,7 @@ func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
 		g.L.Unlock()
 		if ok {
 			delete(g.acks, msg.ReplyTo)
-			g.event <- RoomCtlEvent{WorkerHistory, msg.Timestamp, nil}
+			g.event <- RoomCtlEvent{WorkerHistory, msg.Timestamp}
 			return true
 		}
 	case *slack.MessageEvent:
@@ -122,7 +116,7 @@ func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
 				g.Name(), g.Id(), msg)
 			return false
 		}
-		g.AppendMsg((*slack.Message)(msg))
+		g.addMessage((*slack.Message)(msg))
 		return true
 	}
 

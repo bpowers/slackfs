@@ -28,13 +28,11 @@ const (
 	WorkerStop CtlEventType = iota
 	WorkerSend
 	WorkerHistory
-	WorkerAppend
 )
 
 type RoomCtlEvent struct {
 	Type CtlEventType
 	Data string
-	Msg  *slack.Message
 }
 
 type Session struct {
@@ -122,7 +120,6 @@ func (s *Session) getHistory(fn historyFn, id, oldest string) error {
 	return nil
 }
 
-// should only be called from the worker?
 func (s *Session) addMessage(msg *slack.Message) error {
 	s.L.Lock()
 	defer s.L.Unlock()
