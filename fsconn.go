@@ -275,5 +275,16 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 }
 
 func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
+	switch evt.Data.(type) {
+	case slack.AckMessage:
+		rs.Lock()
+		defer rs.Unlock()
+		for _, room := range rs.objs {
+			if ok := room.Event(evt); ok {
+				return true
+			}
+		}
+		return false
+	}
 	return false
 }

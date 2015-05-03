@@ -12,10 +12,10 @@ build:
 	go build
 
 run: unmount build
-	./slackfs $(OPTIONS) -token $(TOKEN) $(MNT)
+	./slackfs $(FLAGS) -token $(TOKEN) $(MNT)
 
 run-offline: unmount build
-	./slackfs $(OPTIONS) -offline $(INFO) -token $(TOKEN) $(MNT)
+	./slackfs $(FLAGS) -offline $(INFO) -token $(TOKEN) $(MNT)
 
 update-offline-info:
 	curl "https://slack.com/api/rtm.start?token=$(TOKEN)" | pretty >info.json

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -22,6 +23,8 @@ type Group struct {
 
 	running uint32 // updated atomically, lock-free read
 	event   chan RoomCtlEvent
+
+	acks map[int]*slack.OutgoingMessage
 }
 
 func NewGroup(sg slack.Group, conn *FSConn) *Group {
@@ -29,6 +32,7 @@ func NewGroup(sg slack.Group, conn *FSConn) *Group {
 	g.Group = sg
 	g.conn = conn
 	g.L = &g.mu
+	g.acks = make(map[int]*slack.OutgoingMessage)
 
 	g.event = make(chan RoomCtlEvent)
 
@@ -39,6 +43,7 @@ func NewGroup(sg slack.Group, conn *FSConn) *Group {
 
 func (g *Group) work() {
 	atomic.StoreUint32(&g.running, 1)
+
 	// we unconditionally start workers for every known channel,
 	// but don't request history for channels we're not a part of.
 	if g.IsOpen() {
@@ -52,9 +57,34 @@ outer:
 		switch ev.Type {
 		case WorkerStop:
 			break outer
+		case WorkerSend:
+			msg := ev.Data
+			id := g.Id()
+			out := g.conn.ws.NewOutgoingMessage(msg, id)
+			g.L.Lock()
+			g.acks[out.Id] = out
+			g.L.Unlock()
+			err := g.conn.ws.SendMessage(out)
+			if err != nil {
+				log.Printf("SendMessage: %s", err)
+			}
+			// message is sent, and we've recorded it so
+			// that when we get a response we can deal
+			// with it.
+		case WorkerHistory:
+			timestamp := ev.Data
+			if err := g.getHistory(g.conn.api.GetGroupHistory, g.Id(), timestamp); err != nil {
+				log.Printf("'%s'.getHistory() 2: %s", g.Name(), err)
+			}
 		}
 	}
 	atomic.StoreUint32(&g.running, 0)
+}
+
+func (g *Group) Write(msg []byte) error {
+	g.event <- RoomCtlEvent{WorkerSend, string(msg)}
+
+	return nil
 }
 
 func (g *Group) Id() string {
@@ -70,7 +100,18 @@ func (g *Group) IsOpen() bool {
 }
 
 func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
-	// TODO(bp) implement
+	switch msg := evt.Data.(type) {
+	case slack.AckMessage:
+		g.L.Lock()
+		_, ok := g.acks[msg.ReplyTo]
+		g.L.Unlock()
+		if ok {
+			delete(g.acks, msg.ReplyTo)
+			g.event <- RoomCtlEvent{WorkerHistory, msg.Timestamp}
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -99,7 +140,21 @@ func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp
 		return fuse.ENOSYS
 	}
 
-	return g.conn.Send(req.Data, g.Id())
+	msg := bytes.TrimSpace(req.Data)
+
+	err := g.Write(msg)
+	if err == nil {
+		resp.Size = len(req.Data)
+	}
+	return err
+}
+
+func (n *groupWriteNode) Activate() error {
+	if n.parent == nil {
+		return nil
+	}
+
+	return n.parent.addChild(n)
 }
 
 var groupAttrs = []AttrFactory{

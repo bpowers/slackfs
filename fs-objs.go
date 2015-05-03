@@ -227,7 +227,6 @@ type AttrFactory func(parent *DirNode) (INode, error)
 
 type AttrNode struct {
 	Node
-	Mode os.FileMode
 
 	size    uint64
 	content atomic.Value // []byte
@@ -235,7 +234,7 @@ type AttrNode struct {
 
 func (an *AttrNode) Attr(a *fuse.Attr) {
 	a.Inode = an.ino
-	a.Mode = an.Mode
+	a.Mode = an.mode
 	a.Size = an.size
 }
 

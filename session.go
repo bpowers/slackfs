@@ -8,9 +8,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"os"
+	"sort"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
@@ -25,10 +26,13 @@ type CtlEventType int
 
 const (
 	WorkerStop CtlEventType = iota
+	WorkerSend
+	WorkerHistory
 )
 
 type RoomCtlEvent struct {
 	Type CtlEventType
+	Data string
 }
 
 type Session struct {
@@ -45,19 +49,19 @@ type Session struct {
 
 func (s *Session) CurrLen() uint64 {
 	s.L.Lock()
+	defer s.L.Unlock()
 	for !s.initialized {
 		s.Wait()
 	}
-	defer s.L.Unlock()
 	return uint64(s.formatted.Len())
 }
 
 func (s *Session) Bytes(offset int64, size int) ([]byte, error) {
 	s.L.Lock()
+	defer s.L.Unlock()
 	for !s.initialized {
 		s.Wait()
 	}
-	defer s.L.Unlock()
 	if offset != 0 {
 		log.Printf("TODO: read w/ offset not implemented yet")
 		return nil, fuse.EIO
@@ -74,11 +78,17 @@ func (s *Session) formatMsg(msg slack.Message) error {
 	return t.Execute(&s.formatted, msg)
 }
 
+type msgSlice []slack.Message
+
+func (p msgSlice) Len() int           { return len(p) }
+func (p msgSlice) Less(i, j int) bool { return p[i].Timestamp < p[j].Timestamp }
+func (p msgSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
 type historyFn func(id string, params slack.HistoryParameters) (*slack.History, error)
 
-func (s *Session) getHistory(fn historyFn, id, lastRead string) error {
+func (s *Session) getHistory(fn historyFn, id, oldest string) error {
 	h, err := fn(id, slack.HistoryParameters{
-		Oldest:    lastRead,
+		Oldest:    oldest,
 		Count:     1000,
 		Inclusive: true,
 	})
@@ -89,6 +99,8 @@ func (s *Session) getHistory(fn historyFn, id, lastRead string) error {
 	if h.HasMore {
 		log.Printf("TODO: we need to page/fetch more messages")
 	}
+
+	sort.Sort(msgSlice(h.Messages))
 
 	s.L.Lock()
 	defer s.L.Unlock()
@@ -138,13 +150,18 @@ type SessionProvider interface {
 
 type SessionAttrNode struct {
 	Node
-	Mode os.FileMode
 	Size int
+}
+
+func (an *SessionAttrNode) Getattr(ctx context.Context, req *fuse.GetattrRequest, resp *fuse.GetattrResponse) error {
+	resp.AttrValid = 1 * time.Second
+	an.Attr(&resp.Attr)
+	return nil
 }
 
 func (an *SessionAttrNode) Attr(a *fuse.Attr) {
 	a.Inode = an.ino
-	a.Mode = an.Mode
+	a.Mode = an.mode
 	a.Size = an.parent.priv.(SessionProvider).CurrLen()
 }
 
