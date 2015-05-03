@@ -40,6 +40,7 @@ type FSConn struct {
 	users    *UserSet
 	channels *RoomSet
 	groups   *RoomSet
+	ims      *RoomSet
 }
 
 // shared by offline/offline public New functions
@@ -96,11 +97,21 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		return nil, fmt.Errorf("NewRoomSet: %s", err)
 	}
 
+	ims := make([]Room, 0, len(info.IMs))
+	for _, im := range info.IMs {
+		ims = append(ims, NewIM(im, conn))
+	}
+	conn.ims, err = NewRoomSet("ims", conn, NewIMDir, ims)
+	if err != nil {
+		return nil, fmt.Errorf("NewRoomSet: %s", err)
+	}
+
 	// simplify dispatch code by keeping track of event handlers
 	// in a slice.  We (FSConn) are an event sink too - add
 	// ourselves to the list first, so that we can separate
 	// routing logic from connection-level handling logic.
-	conn.sinks = append(conn.sinks, conn, conn.channels, conn.groups, conn.users)
+	conn.sinks = append(conn.sinks, conn,
+		conn.users, conn.channels, conn.groups, conn.ims)
 
 	// only spawn goroutines in online mode
 	if infoPath == "" {
@@ -192,6 +203,13 @@ func NewUserSet(name string, conn *FSConn, create DirCreator, users []*User) (*U
 
 	us.ds.Activate()
 	return us, nil
+}
+
+func (us *UserSet) Get(id string) *User {
+	us.Lock()
+	defer us.Unlock()
+
+	return us.objs[id]
 }
 
 // on change, lock UserSet, then lock User.  No need to lock DirNode,
