@@ -1,5 +1,7 @@
 implement ch formatting
 
+build/test w/ race detector
+
 implement 'read' notifications back to slack server (?)
 
 implement channels ctl (join/leave)
