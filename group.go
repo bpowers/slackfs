@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync/atomic"
 
 	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
@@ -15,7 +16,45 @@ import (
 
 type Group struct {
 	slack.Group
+	Session
+
 	conn *FSConn
+
+	running uint32 // updated atomically, lock-free read
+	event   chan RoomCtlEvent
+}
+
+func NewGroup(sg slack.Group, conn *FSConn) *Group {
+	g := new(Group)
+	g.Group = sg
+	g.conn = conn
+	g.L = &g.mu
+
+	g.event = make(chan RoomCtlEvent)
+
+	go g.work()
+
+	return g
+}
+
+func (g *Group) work() {
+	atomic.StoreUint32(&g.running, 1)
+	// we unconditionally start workers for every known channel,
+	// but don't request history for channels we're not a part of.
+	if g.IsOpen() {
+		if err := g.getHistory(g.conn.api.GetGroupHistory, g.Id(), g.LastRead); err != nil {
+			log.Printf("'%s'.getHistory(): %s", g.Name(), err)
+		}
+	}
+outer:
+	for {
+		ev := <-g.event
+		switch ev.Type {
+		case WorkerStop:
+			break outer
+		}
+	}
+	atomic.StoreUint32(&g.running, 0)
 }
 
 func (g *Group) Id() string {
@@ -33,29 +72,6 @@ func (g *Group) IsOpen() bool {
 func (g *Group) Event(evt slack.SlackEvent) (handled bool) {
 	// TODO(bp) implement
 	return false
-}
-
-type groupCtlNode struct {
-	AttrNode
-}
-
-func newGroupCtl(parent *DirNode) (INode, error) {
-	name := "ctl"
-	n := new(groupCtlNode)
-	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
-		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
-	}
-	n.Update()
-	n.mode = 0222
-	return n, nil
-}
-
-func (n *groupCtlNode) Update() {
-}
-
-func (n *groupCtlNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	log.Printf("ctl: %s", string(req.Data))
-	return nil
 }
 
 type groupWriteNode struct {
@@ -87,8 +103,8 @@ func (n *groupWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, resp
 }
 
 var groupAttrs = []AttrFactory{
-	newGroupCtl,
 	newGroupWrite,
+	newSession,
 }
 
 func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {

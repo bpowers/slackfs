@@ -91,8 +91,8 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	}
 
 	groups := make([]Room, 0, len(conn.info.Groups))
-	for _, sGroup := range conn.info.Groups {
-		groups = append(groups, &Group{sGroup, conn})
+	for _, g := range conn.info.Groups {
+		groups = append(groups, NewGroup(g, conn))
 	}
 	conn.groups, err = NewRoomSet("groups", conn, NewGroupDir, groups)
 	if err != nil {

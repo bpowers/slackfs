@@ -8,16 +8,28 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"text/template"
 
 	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
+	"golang.org/x/net/context"
 )
 
 const defaultMsgTmpl = "{{.Timestamp}}\t{{.Username}}\t{{.Text}}\n"
 
 var t = template.Must(template.New("msg").Parse(defaultMsgTmpl))
+
+type CtlEventType int
+
+const (
+	WorkerStop CtlEventType = iota
+)
+
+type RoomCtlEvent struct {
+	Type CtlEventType
+}
 
 type Session struct {
 	sync.Cond
@@ -62,8 +74,10 @@ func (s *Session) formatMsg(msg slack.Message) error {
 	return t.Execute(&s.formatted, msg)
 }
 
-func (s *Session) getHistory(api *slack.Slack, id, lastRead string) error {
-	h, err := api.GetChannelHistory(id, slack.HistoryParameters{
+type historyFn func(id string, params slack.HistoryParameters) (*slack.History, error)
+
+func (s *Session) getHistory(fn historyFn, id, lastRead string) error {
+	h, err := fn(id, slack.HistoryParameters{
 		Oldest:    lastRead,
 		Count:     1000,
 		Inclusive: true,
@@ -88,5 +102,62 @@ func (s *Session) getHistory(api *slack.Slack, id, lastRead string) error {
 	s.initialized = true
 	s.Broadcast()
 
+	return nil
+}
+
+func newSession(parent *DirNode) (INode, error) {
+	name := "session"
+	n := new(SessionAttrNode)
+	if err := n.Node.Init(parent, name, nil); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.mode = 0444
+	return n, nil
+}
+
+func (an *SessionAttrNode) Activate() error {
+	if an.parent == nil {
+		return nil
+	}
+
+	return an.parent.addChild(an)
+}
+
+func (an *SessionAttrNode) DirentType() fuse.DirentType {
+	return fuse.DT_File
+}
+
+func (an *SessionAttrNode) IsDir() bool {
+	return false
+}
+
+type SessionProvider interface {
+	CurrLen() uint64
+	Bytes(offset int64, size int) ([]byte, error)
+}
+
+type SessionAttrNode struct {
+	Node
+	Mode os.FileMode
+	Size int
+}
+
+func (an *SessionAttrNode) Attr(a *fuse.Attr) {
+	a.Inode = an.ino
+	a.Mode = an.Mode
+	a.Size = an.parent.priv.(SessionProvider).CurrLen()
+}
+
+func (an *SessionAttrNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	provider := an.parent.priv.(SessionProvider)
+
+	frag, err := provider.Bytes(req.Offset, req.Size)
+	if err != nil {
+		return fmt.Errorf("GetBytes(%d, %d): %s", req.Offset, req.Size, err)
+	}
+
+	an.Size += len(frag)
+
+	resp.Data = frag
 	return nil
 }

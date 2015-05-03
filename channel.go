@@ -7,23 +7,12 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"sync/atomic"
 
 	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
 	"golang.org/x/net/context"
 )
-
-type CtlEventType int
-
-const (
-	WorkerStop CtlEventType = iota
-)
-
-type RoomCtlEvent struct {
-	Type CtlEventType
-}
 
 type Channel struct {
 	slack.Channel
@@ -53,7 +42,7 @@ func (c *Channel) work() {
 	// we unconditionally start workers for every known channel,
 	// but don't request history for channels we're not a part of.
 	if c.IsOpen() {
-		if err := c.getHistory(c.conn.api, c.Id(), c.LastRead); err != nil {
+		if err := c.getHistory(c.conn.api.GetChannelHistory, c.Id(), c.LastRead); err != nil {
 			log.Printf("'%s'.getHistory(): %s", c.Name(), err)
 		}
 	}
@@ -85,29 +74,6 @@ func (c *Channel) Event(evt slack.SlackEvent) (handled bool) {
 	return false
 }
 
-type channelCtlNode struct {
-	AttrNode
-}
-
-func newChannelCtl(parent *DirNode) (INode, error) {
-	name := "ctl"
-	n := new(channelCtlNode)
-	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
-		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
-	}
-	n.Update()
-	n.mode = 0222
-	return n, nil
-}
-
-func (n *channelCtlNode) Update() {
-}
-
-func (n *channelCtlNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	log.Printf("ctl: %s", string(req.Data))
-	return nil
-}
-
 type channelWriteNode struct {
 	AttrNode
 }
@@ -136,68 +102,10 @@ func (n *channelWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, re
 	return c.conn.Send(req.Data, c.Id())
 }
 
-func newSession(parent *DirNode) (INode, error) {
-	name := "session"
-	n := new(SessionAttrNode)
-	if err := n.Node.Init(parent, name, nil); err != nil {
-		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
-	}
-	n.mode = 0444
-	return n, nil
-}
-
-func (an *SessionAttrNode) Activate() error {
-	if an.parent == nil {
-		return nil
-	}
-
-	return an.parent.addChild(an)
-}
-
-func (an *SessionAttrNode) DirentType() fuse.DirentType {
-	return fuse.DT_File
-}
-
-func (an *SessionAttrNode) IsDir() bool {
-	return false
-}
-
-type SessionProvider interface {
-	CurrLen() uint64
-	Bytes(offset int64, size int) ([]byte, error)
-}
-
-type SessionAttrNode struct {
-	Node
-	Mode os.FileMode
-	Size int
-}
-
-func (an *SessionAttrNode) Attr(a *fuse.Attr) {
-	a.Inode = an.ino
-	a.Mode = an.Mode
-	a.Size = an.parent.priv.(SessionProvider).CurrLen()
-}
-
-func (an *SessionAttrNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	provider := an.parent.priv.(SessionProvider)
-
-	frag, err := provider.Bytes(req.Offset, req.Size)
-	if err != nil {
-		return fmt.Errorf("GetBytes(%d, %d): %s", req.Offset, req.Size, err)
-	}
-
-	an.Size += len(frag)
-
-	resp.Data = frag
-	return nil
-}
-
 // TODO(bp) conceptually these would be better as FIFOs, but when mode
 // has os.NamedPipe the writer (bash) hangs on an open() that we never
 // get a fuse request for.
 var channelAttrs = []AttrFactory{
-	//newChannelCtl,
 	newChannelWrite,
 	newSession,
 }
