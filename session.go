@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"sort"
+	"strconv"
 	"sync"
 	"text/template"
 	"time"
@@ -18,9 +20,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-const defaultMsgTmpl = "{{.Timestamp}}\t{{.Username}}\t{{.Text}}\n"
-
-var t = template.Must(template.New("msg").Parse(defaultMsgTmpl))
+const defaultMsgTmpl = "{{ts .Timestamp \"Jan 02 15:04:05\"}}\t{{username .}}\t{{.Text}}\n"
 
 type msgSlice []slack.Message
 
@@ -35,6 +35,7 @@ type Session struct {
 	history HistoryFn
 	id      string
 	conn    *FSConn
+	fns     template.FuncMap
 
 	sync.Cond
 	mu sync.Mutex
@@ -57,6 +58,27 @@ func SessionInit(s *Session, id string, conn *FSConn, history HistoryFn) {
 	s.id = id
 	s.conn = conn
 	s.acks = make(map[int]struct{})
+
+	s.fns = template.FuncMap{
+		"username": func(msg *slack.Message) (string, error) {
+			u := s.conn.users.Get(msg.UserId)
+			if u == nil {
+				return fmt.Sprintf("<unknown|%s>", msg.UserId), nil
+			}
+			return u.Name, nil
+		},
+		"ts": func(ts, layout string) (string, error) {
+			secs, err := strconv.ParseFloat(ts, 64)
+			if err != nil {
+				log.Printf("ParseFloat(%s): %s", ts, err)
+				return ts, nil
+			}
+			sec := int64(secs)
+			nsec := int64(1000000000 * (secs - math.Floor(secs)))
+			t := time.Unix(sec, nsec)
+			return t.Format(layout), nil
+		},
+	}
 }
 
 func (s *Session) CurrLen() uint64 {
@@ -133,6 +155,7 @@ func (s *Session) Event(evt slack.SlackEvent) bool {
 
 // must be called with s.L held
 func (s *Session) formatMsg(msg *slack.Message) error {
+	t := template.Must(template.New("msg").Funcs(s.fns).Parse(defaultMsgTmpl))
 	return t.Execute(&s.formatted, msg)
 }
 
