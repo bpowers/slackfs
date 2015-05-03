@@ -22,30 +22,41 @@ const defaultMsgTmpl = "{{.Timestamp}}\t{{.Username}}\t{{.Text}}\n"
 
 var t = template.Must(template.New("msg").Parse(defaultMsgTmpl))
 
-type CtlEventType int
+type msgSlice []slack.Message
 
-const (
-	WorkerStop CtlEventType = iota
-	WorkerSend
-	WorkerHistory
-)
+func (p msgSlice) Len() int           { return len(p) }
+func (p msgSlice) Less(i, j int) bool { return p[i].Timestamp < p[j].Timestamp }
+func (p msgSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
-type RoomCtlEvent struct {
-	Type CtlEventType
-	Data string
-}
+type HistoryFn func(id string, params slack.HistoryParameters) (*slack.History, error)
 
 type Session struct {
+	// set in SessionInit, immutable after
+	history HistoryFn
+	id      string
+	conn    *FSConn
+
 	sync.Cond
 	mu sync.Mutex
 
 	// everything below here must be accessed with Session.L held.
+
+	acks map[int]struct{} // waiting for websocket acks
+
 	// When any of the below are changed, Broadcast is called on
 	// cond.
 
 	initialized bool
 	formatted   bytes.Buffer
 	newestTs    string // most recent timestamp
+}
+
+func SessionInit(s *Session, id string, conn *FSConn, history HistoryFn) {
+	s.L = &s.mu
+	s.history = history
+	s.id = id
+	s.conn = conn
+	s.acks = make(map[int]struct{})
 }
 
 func (s *Session) CurrLen() uint64 {
@@ -74,27 +85,65 @@ func (s *Session) Bytes(offset int64, size int) ([]byte, error) {
 	return bytes, nil
 }
 
+func (s *Session) Write(msg []byte) error {
+	msg = bytes.TrimSpace(msg)
+	id := s.id
+	out := s.conn.ws.NewOutgoingMessage(string(msg), id)
+
+	// record our websocket-message ID so that we know what to do
+	// when the server acknowledges receipt
+	s.L.Lock()
+	s.acks[out.Id] = struct{}{}
+	s.L.Unlock()
+
+	err := s.conn.ws.SendMessage(out)
+	if err != nil {
+		log.Printf("SendMessage: %s", err)
+	}
+
+	return nil
+}
+
+func (s *Session) Event(evt slack.SlackEvent) bool {
+	switch msg := evt.Data.(type) {
+	case slack.AckMessage:
+		s.L.Lock()
+		_, ok := s.acks[msg.ReplyTo]
+		delete(s.acks, msg.ReplyTo)
+		s.L.Unlock()
+		if !ok {
+			return false
+		}
+		if err := s.FetchHistory(msg.Timestamp, true); err != nil {
+			log.Printf("'%s'.FetchHistory() 2: %s", s.id, err)
+		}
+		return true
+
+	case *slack.MessageEvent:
+		if msg.ChannelId != s.id {
+			log.Printf("error: bad routing on %s for %#v", s.id, msg)
+			return false
+		}
+		s.addMessage((*slack.Message)(msg))
+		return true
+	}
+
+	return false
+}
+
 // must be called with s.L held
 func (s *Session) formatMsg(msg *slack.Message) error {
 	return t.Execute(&s.formatted, msg)
 }
 
-type msgSlice []slack.Message
-
-func (p msgSlice) Len() int           { return len(p) }
-func (p msgSlice) Less(i, j int) bool { return p[i].Timestamp < p[j].Timestamp }
-func (p msgSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-
-type historyFn func(id string, params slack.HistoryParameters) (*slack.History, error)
-
-func (s *Session) getHistory(fn historyFn, id, oldest string) error {
-	h, err := fn(id, slack.HistoryParameters{
+func (s *Session) FetchHistory(oldest string, inclusive bool) error {
+	h, err := s.history(s.id, slack.HistoryParameters{
 		Oldest:    oldest,
 		Count:     1000,
-		Inclusive: true,
+		Inclusive: inclusive,
 	})
 	if err != nil {
-		return fmt.Errorf("GetChannelHistory(%s): %s", id, err)
+		return fmt.Errorf("GetHistory(%s): %s", s.id, err)
 	}
 
 	if h.HasMore {

@@ -7,7 +7,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"sync/atomic"
 
 	"github.com/bpowers/fuse"
 	"github.com/nlopes/slack"
@@ -17,44 +16,19 @@ import (
 type Channel struct {
 	slack.Channel
 	Session
-
-	conn *FSConn
-
-	running uint32 // updated atomically, lock-free read
-	event   chan RoomCtlEvent
 }
 
 func NewChannel(sc slack.Channel, conn *FSConn) *Channel {
 	c := new(Channel)
 	c.Channel = sc
-	c.conn = conn
-	c.L = &c.mu
+	SessionInit(&c.Session, sc.Id, conn, conn.api.GetChannelHistory)
 
-	c.event = make(chan RoomCtlEvent)
-
-	go c.work()
+	// fetch session history in the background
+	if c.IsOpen() {
+		go c.FetchHistory(c.LastRead, true)
+	}
 
 	return c
-}
-
-func (c *Channel) work() {
-	atomic.StoreUint32(&c.running, 1)
-	// we unconditionally start workers for every known channel,
-	// but don't request history for channels we're not a part of.
-	if c.IsOpen() {
-		if err := c.getHistory(c.conn.api.GetChannelHistory, c.Id(), c.LastRead); err != nil {
-			log.Printf("'%s'.getHistory(): %s", c.Name(), err)
-		}
-	}
-outer:
-	for {
-		ev := <-c.event
-		switch ev.Type {
-		case WorkerStop:
-			break outer
-		}
-	}
-	atomic.StoreUint32(&c.running, 0)
 }
 
 func (c *Channel) Id() string {
@@ -67,11 +41,6 @@ func (c *Channel) Name() string {
 
 func (c *Channel) IsOpen() bool {
 	return c.Channel.IsMember
-}
-
-func (c *Channel) Event(evt slack.SlackEvent) (handled bool) {
-	// TODO(bp) implement
-	return false
 }
 
 type channelWriteNode struct {
@@ -99,7 +68,10 @@ func (n *channelWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, re
 		return fuse.ENOSYS
 	}
 
-	return c.conn.Send(req.Data, c.Id())
+	resp.Size = len(req.Data)
+	go c.Write(req.Data)
+
+	return nil
 }
 
 // TODO(bp) conceptually these would be better as FIFOs, but when mode

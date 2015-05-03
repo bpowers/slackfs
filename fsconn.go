@@ -137,12 +137,6 @@ func (conn *FSConn) consumeEvents() {
 }
 
 func (conn *FSConn) routeEvent(evt slack.SlackEvent) {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Printf("routeEvent panic: %s", err)
-		}
-	}()
-
 	var ok bool
 	for _, handler := range conn.sinks {
 		if ok = handler.Event(evt); ok {
