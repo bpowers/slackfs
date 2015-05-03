@@ -99,11 +99,12 @@ func (s *Session) Bytes(offset int64, size int) ([]byte, error) {
 	for !s.initialized {
 		s.Wait()
 	}
-	if offset != 0 {
-		log.Printf("TODO: read w/ offset not implemented yet")
+	bytes := s.formatted.Bytes()
+	if offset >= int64(len(bytes)) {
+		log.Printf("TODO: offset (%d) > bytes (%s)", offset, s.id)
 		return nil, fuse.EIO
 	}
-	bytes := s.formatted.Bytes()
+	bytes = bytes[offset:]
 	if len(bytes) > size {
 		bytes = bytes[:size]
 	}

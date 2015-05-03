@@ -1,5 +1,3 @@
-implement ch formatting
-
 build/test w/ race detector
 
 implement 'read' notifications back to slack server (?)
