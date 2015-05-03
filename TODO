@@ -1,10 +1,10 @@
-update user objects on presence/name changes
+implement ch formatting
+implement 'read' notifications back to slack server
 
-implement ch/session
-implement ch/ctl (leave, change session buffer size)
-implement channels ctl (join)
+update user objects on name changes
+
+implement channels ctl (join/leave)
 implement ch/write.pre
-implement ch/write.md
 implement ch/history.json
 
 implement direct messages

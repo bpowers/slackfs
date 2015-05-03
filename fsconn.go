@@ -32,10 +32,9 @@ type Room interface {
 type FSConn struct {
 	super *Super
 
-	api  *slack.Slack
-	ws   *slack.SlackWS
-	in   chan slack.SlackEvent
-	info *slack.Info
+	api *slack.Slack
+	ws  *slack.SlackWS
+	in  chan slack.SlackEvent
 
 	sinks    []EventHandler
 	users    *UserSet
@@ -60,20 +59,18 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	} else {
 		conn.api = slack.New(token)
 		//conn.api.SetDebug(true)
-		conn.ws, err = conn.api.StartRTM("", "https://slack.com")
+		conn.ws, info, err = conn.api.StartRTM("", "https://slack.com")
 		if err != nil {
 			return nil, fmt.Errorf("StartRTM(): %s\n", err)
 		}
-		info = conn.api.GetInfo()
 	}
 
-	conn.info = &info
 	conn.in = make(chan slack.SlackEvent)
 	conn.sinks = make([]EventHandler, 0, 4)
 	conn.super = NewSuper()
 
-	users := make([]*User, 0, len(conn.info.Users))
-	for _, u := range conn.info.Users {
+	users := make([]*User, 0, len(info.Users))
+	for _, u := range info.Users {
 		users = append(users, NewUser(u, conn))
 	}
 	conn.users, err = NewUserSet("users", conn, NewUserDir, users)
@@ -81,8 +78,8 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		return nil, fmt.Errorf("NewUserSet: %s", err)
 	}
 
-	chans := make([]Room, 0, len(conn.info.Channels))
-	for _, c := range conn.info.Channels {
+	chans := make([]Room, 0, len(info.Channels))
+	for _, c := range info.Channels {
 		chans = append(chans, NewChannel(c, conn))
 	}
 	conn.channels, err = NewRoomSet("channels", conn, NewChannelDir, chans)
@@ -90,8 +87,8 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 		return nil, fmt.Errorf("NewRoomSet: %s", err)
 	}
 
-	groups := make([]Room, 0, len(conn.info.Groups))
-	for _, g := range conn.info.Groups {
+	groups := make([]Room, 0, len(info.Groups))
+	for _, g := range info.Groups {
 		groups = append(groups, NewGroup(g, conn))
 	}
 	conn.groups, err = NewRoomSet("groups", conn, NewGroupDir, groups)
