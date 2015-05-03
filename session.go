@@ -20,7 +20,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-const defaultMsgTmpl = "{{ts .Timestamp \"Jan 02 15:04:05\"}}\t{{username .}}\t{{.Text}}\n"
+const defaultMsgTmpl = "{{ts .Timestamp \"Jan 02 15:04:05\"}}\t{{username .}}\t{{fmt .Text}}\n"
 
 type msgSlice []slack.Message
 
@@ -77,6 +77,9 @@ func SessionInit(s *Session, id string, conn *FSConn, history HistoryFn) {
 			nsec := int64(1000000000 * (secs - math.Floor(secs)))
 			t := time.Unix(sec, nsec)
 			return t.Format(layout), nil
+		},
+		"fmt": func(txt string) (string, error) {
+			return txt, nil
 		},
 	}
 }
