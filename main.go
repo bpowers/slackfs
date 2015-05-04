@@ -5,11 +5,14 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
+	"os/user"
 	"runtime"
 	"syscall"
 	"time"
@@ -18,11 +21,30 @@ import (
 	"github.com/bpowers/fuse/fs"
 )
 
-const usage = `Usage: %s [OPTION...] MOUNTPOINT
+const (
+	usage = `Usage: %s [OPTION...] MOUNTPOINT
 Slack as a filesystem.
+
+The -token-path option or the SLACKFS_TOKEN_PATH environmental
+variable can be used to specify the location of a file containing your
+slack API token.  If neither is set, the default token file location
+of '%s' is tried.
 
 Options:
 `
+
+	noTokenFound = `No token file could be read.  If you haven't generated one yet, go to
+https://api.slack.com/web and scroll to the bottom. If 'none' is
+listed as the token, then click the green 'Create Token' button next
+to it. Copy the token that appears in red into an otherwise empty file
+stored at ~/.slack-token (or a location of your choosing, specified in
+the environment by SLACKFS_TOKEN_PATH or after the commandline flag
+-token-path).
+
+`
+)
+
+var defaultTokenPath string // initalized in init() below
 
 func debugOut(msg interface{}) {
 	log.Printf("%s", msg)
@@ -30,8 +52,42 @@ func debugOut(msg interface{}) {
 
 func init() {
 	// with more than 1 maxproc, we end up with wild, terrible
-	// memory fragmentation.
+	// memory fragmentation. pss goes from ~14 MB to 180 MB.
 	runtime.GOMAXPROCS(1)
+
+	home := ""
+
+	if u, err := user.Current(); err == nil {
+		home = u.HomeDir
+	} else {
+		home = os.Getenv("HOME")
+	}
+	// if we're statically linked + HOME isn't set (running as a
+	// service under systemd?), we won't know our home directory.
+	// It is least surprising to fail, rather than look in
+	// whatever random directory we're in.
+	if home != "" {
+		defaultTokenPath = fmt.Sprintf("%s/.slack-token", home)
+	}
+}
+
+func getToken(flagPath string) string {
+	path := defaultTokenPath
+	if envPath := os.Getenv("SLACKFS_TOKEN_PATH"); envPath != "" {
+		path = envPath
+	}
+	if flagPath != "" {
+		path = flagPath
+	}
+	if path == "" {
+		return ""
+	}
+	buf, err := ioutil.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading token file: %s\n\n", err)
+		return ""
+	}
+	return string(bytes.TrimSpace(buf))
 }
 
 var memProfile, cpuProfile string
@@ -43,7 +99,7 @@ func main() {
 		"write cpu profile to this file")
 	offline := flag.String("offline", "",
 		"specified JSON info response file to use offline")
-	token := flag.String("token", "", "Slack API token")
+	tokenPath := flag.String("token-path", "", "Slack API token")
 
 	verbose := flag.Bool("v", false, "verbose FUSE logging")
 
@@ -53,6 +109,12 @@ func main() {
 	}
 	flag.Parse()
 	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	token := getToken(*tokenPath)
+	if token == "" {
+		fmt.Fprintf(os.Stderr, noTokenFound)
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -86,7 +148,7 @@ func main() {
 	if *offline != "" {
 		conn, err = NewOfflineFSConn(*offline)
 	} else {
-		conn, err = NewFSConn(*token)
+		conn, err = NewFSConn(token)
 	}
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
