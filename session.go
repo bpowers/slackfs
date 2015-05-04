@@ -100,7 +100,7 @@ func (s *Session) Bytes(offset int64, size int) ([]byte, error) {
 		s.Wait()
 	}
 	bytes := s.formatted.Bytes()
-	if offset >= int64(len(bytes)) {
+	if offset > int64(len(bytes)) {
 		log.Printf("TODO: offset (%d) > bytes (%s)", offset, s.id)
 		return nil, fuse.EIO
 	}
@@ -164,13 +164,24 @@ func (s *Session) formatMsg(msg *slack.Message) error {
 }
 
 func (s *Session) FetchHistory(oldest string, inclusive bool) error {
+	if oldest == "0000000000.000000" {
+		oldest = "0" // :(
+	}
 	h, err := s.history(s.id, slack.HistoryParameters{
 		Oldest:    oldest,
 		Count:     1000,
 		Inclusive: inclusive,
 	})
 	if err != nil {
-		return fmt.Errorf("GetHistory(%s): %s", s.id, err)
+		// FIXME: if we fail, we don't set initialized to true
+		// and call Broadcast(), so anyone waiting on s.Cond
+		// will block forever.  Probably change the `go
+		// s.FetchHistory` in each of New{IM,Channel,Group} to
+		// something that both logs the error and marks us as
+		// initialized.
+		err = fmt.Errorf("GetHistory(%s, %s): %s", s.id, oldest, err)
+		log.Printf("%s", err)
+		return err
 	}
 
 	if h.HasMore {
@@ -188,7 +199,11 @@ func (s *Session) FetchHistory(oldest string, inclusive bool) error {
 			log.Printf("formatMsg(%#v): %s", msg, err)
 		}
 	}
-	s.newestTs = h.Messages[len(h.Messages)-1].Timestamp
+	if len(h.Messages) > 0 {
+		s.newestTs = h.Messages[len(h.Messages)-1].Timestamp
+	} else {
+		s.newestTs = "0000000000.000000"
+	}
 	s.initialized = true
 
 	s.Broadcast()

@@ -1,3 +1,5 @@
+in a channel, show (+ keep updated) list of users
+
 implement 'read' notifications back to slack server (?)
 
 implement channels ctl (join/leave)
@@ -12,3 +14,7 @@ unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.MessageEvent)(0xc20859538
 2015/05/03 02:03:25 XXX: presence change with no user object: U04LT2N9N
 unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.UserChangeEvent)(0xc20878e280)}
 unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.UserChangeEvent)(0xc20878e500)}
+
+unhandled evt: slack.SlackEvent{Type:0x0, Data:(*slack.IMCloseEvent)(0xc20822b080)}
+2015/05/04 09:01:36 unmarshalable im_created: {"type":"im_created","user":"U04E9HGFL","channel":{"id":"D04MRTT8R","is_im":true,"user":"U04E9HGFL","created":1430744496,"last_read":"0000000000.000000","latest":null,"unread_count":0,"unread_count_display":0,"is_open":false}}
+unhandled evt: slack.SlackEvent{Type:0x0, Data:(*slack.IMOpenEvent)(0xc20822bf80)}
