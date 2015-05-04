@@ -24,7 +24,7 @@ Slack as a filesystem.
 Options:
 `
 
-func debug(msg interface{}) {
+func debugOut(msg interface{}) {
 	log.Printf("%s", msg)
 }
 
@@ -59,7 +59,7 @@ func main() {
 
 	var debugFn func(msg interface{})
 	if *verbose {
-		debugFn = debug
+		debugFn = debugOut
 	}
 
 	mountpoint := flag.Arg(0)

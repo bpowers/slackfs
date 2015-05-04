@@ -313,8 +313,8 @@ func (n *sessionWriteNode) Write(ctx context.Context, req *fuse.WriteRequest, re
 		return fuse.ENOSYS
 	}
 
+	g.Write(req.Data)
 	resp.Size = len(req.Data)
-	go g.Write(req.Data)
 
 	return nil
 }
@@ -360,10 +360,8 @@ func (n *sessionWritePreNode) Write(ctx context.Context, req *fuse.WriteRequest,
 	copy(msg[3:], msgIn)
 	copy(msg[3+len(msgIn):], escBytes)
 
+	g.Write(msg)
 	resp.Size = len(req.Data)
-	// FIXME(bp) is this necessary? aren't we already running in
-	// our own goroutine?
-	go g.Write(msg)
 
 	return nil
 }
