@@ -40,14 +40,6 @@ func (c *Channel) IsOpen() bool {
 	return c.Channel.IsMember
 }
 
-// TODO(bp) conceptually these would be better as FIFOs, but when mode
-// has os.NamedPipe the writer (bash) hangs on an open() that we never
-// get a fuse request for.
-var channelAttrs = []AttrFactory{
-	newSessionWrite,
-	newSession,
-}
-
 func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
 	if _, ok := priv.(*Channel); !ok {
 		return nil, fmt.Errorf("NewChannelDir called w non-chan: %#v", priv)
@@ -58,7 +50,7 @@ func NewChannelDir(parent *DirNode, id string, priv interface{}) (*DirNode, erro
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	for _, attrFactory := range channelAttrs {
+	for _, attrFactory := range roomAttrs {
 		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)

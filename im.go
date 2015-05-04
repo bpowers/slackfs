@@ -46,11 +46,6 @@ func (im *IM) IsOpen() bool {
 	return im.IM.IsOpen
 }
 
-var imAttrs = []AttrFactory{
-	newSessionWrite,
-	newSession,
-}
-
 func NewIMDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
 	if _, ok := priv.(*IM); !ok {
 		return nil, fmt.Errorf("NewIMDir called w non-im: %#v", priv)
@@ -61,7 +56,7 @@ func NewIMDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	for _, attrFactory := range imAttrs {
+	for _, attrFactory := range roomAttrs {
 		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)

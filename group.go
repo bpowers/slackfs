@@ -40,11 +40,6 @@ func (g *Group) IsOpen() bool {
 	return g.Group.IsOpen
 }
 
-var groupAttrs = []AttrFactory{
-	newSessionWrite,
-	newSession,
-}
-
 func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error) {
 	if _, ok := priv.(*Group); !ok {
 		return nil, fmt.Errorf("NewGroupDir called w non-group: %#v", priv)
@@ -55,7 +50,7 @@ func NewGroupDir(parent *DirNode, id string, priv interface{}) (*DirNode, error)
 		return nil, fmt.Errorf("NewDirNode: %s", err)
 	}
 
-	for _, attrFactory := range groupAttrs {
+	for _, attrFactory := range roomAttrs {
 		n, err := attrFactory(dir)
 		if err != nil {
 			return nil, fmt.Errorf("attrFactory: %s", err)

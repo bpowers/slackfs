@@ -1,9 +1,6 @@
-build/test w/ race detector
-
 implement 'read' notifications back to slack server (?)
 
 implement channels ctl (join/leave)
-implement ch/write.pre
 implement ch/history.json
 
 document locking order

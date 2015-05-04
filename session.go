@@ -326,3 +326,61 @@ func (n *sessionWriteNode) Activate() error {
 
 	return n.parent.addChild(n)
 }
+
+type sessionWritePreNode struct {
+	AttrNode
+}
+
+func newSessionWritePre(parent *DirNode) (INode, error) {
+	name := "write.pre"
+	n := new(sessionWritePreNode)
+	if err := n.AttrNode.Node.Init(parent, name, nil); err != nil {
+		return nil, fmt.Errorf("node.Init('%s': %s", name, err)
+	}
+	n.Update()
+	n.mode = 0222
+	return n, nil
+}
+
+func (n *sessionWritePreNode) Update() {
+}
+
+var escBytes = []byte("```")
+
+func (n *sessionWritePreNode) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	g, ok := n.parent.priv.(SessionWriter)
+	if !ok {
+		log.Printf("priv is not SessionWriter")
+		return fuse.ENOSYS
+	}
+
+	msgIn := bytes.TrimSpace(req.Data)
+	msg := make([]byte, len(msgIn)+6)
+	copy(msg, escBytes)
+	copy(msg[3:], msgIn)
+	copy(msg[3+len(msgIn):], escBytes)
+
+	resp.Size = len(req.Data)
+	// FIXME(bp) is this necessary? aren't we already running in
+	// our own goroutine?
+	go g.Write(msg)
+
+	return nil
+}
+
+func (n *sessionWritePreNode) Activate() error {
+	if n.parent == nil {
+		return nil
+	}
+
+	return n.parent.addChild(n)
+}
+
+// TODO(bp) conceptually these would be better as FIFOs, but when mode
+// has os.NamedPipe the writer (bash) hangs on an open() that we never
+// get a fuse request for.
+var roomAttrs = []AttrFactory{
+	newSessionWrite,
+	newSessionWritePre,
+	newSession,
+}
