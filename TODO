@@ -18,3 +18,5 @@ unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.UserChangeEvent)(0xc20878
 unhandled evt: slack.SlackEvent{Type:0x0, Data:(*slack.IMCloseEvent)(0xc20822b080)}
 2015/05/04 09:01:36 unmarshalable im_created: {"type":"im_created","user":"U04E9HGFL","channel":{"id":"D04MRTT8R","is_im":true,"user":"U04E9HGFL","created":1430744496,"last_read":"0000000000.000000","latest":null,"unread_count":0,"unread_count_display":0,"is_open":false}}
 unhandled evt: slack.SlackEvent{Type:0x0, Data:(*slack.IMOpenEvent)(0xc20822bf80)}
+
+2015/05/04 20:45:26 unmarshalable channel_rename: {"type":"channel_rename","channel":{"id":"C04MEDAJN","is_channel":true,"name":"uxanddesign","created":"1430785526"},"event_ts":"1430786726.964693"}
