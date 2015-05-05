@@ -144,6 +144,10 @@ func main() {
 		}
 	}()
 
+	if err := os.MkdirAll(mountpoint, 0777); err != nil {
+		log.Fatalf("couldn't create mountpoint: %s", err)
+	}
+
 	var conn *FSConn
 	if *offline != "" {
 		conn, err = NewOfflineFSConn(*offline)
