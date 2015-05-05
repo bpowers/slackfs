@@ -104,7 +104,7 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose FUSE logging")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, usage, os.Args[0])
+		fmt.Fprintf(os.Stderr, usage, os.Args[0], defaultTokenPath)
 		flag.PrintDefaults()
 	}
 	flag.Parse()
