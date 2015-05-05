@@ -9,6 +9,20 @@ document locking order
 
 implement teamjoin + userchange:
 
+2015/05/05 17:43:29 read tcp 54.175.131.218:443: connection reset by peer
+panic: read tcp 54.175.131.218:443: connection reset by peer
+
+goroutine 63 [running]:
+log.Panic(0xc2084f3f88, 0x1, 0x1)
+	/usr/local/Cellar/go/1.4.2/libexec/src/log/log.go:307 +0xb9
+github.com/bpowers/slack.(*SlackWS).HandleIncomingEvents(0xc208084580, 0xc20826fc20)
+	/Users/bpowers/src/github.com/bpowers/slack/websocket.go:167 +0x619
+created by main.newFSConn
+	/Users/bpowers/src/github.com/bpowers/slackfs/fsconn.go:119 +0x19f1
+
+
+
+
 unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.TeamJoinEvent)(0xc20878e140)}
 unhandled msg: slack.SlackEvent{Type:0x0, Data:(*slack.MessageEvent)(0xc208595380)}
 2015/05/03 02:03:25 XXX: presence change with no user object: U04LT2N9N
