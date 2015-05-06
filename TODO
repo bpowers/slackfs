@@ -2,7 +2,7 @@ in a channel, show (+ keep updated) list of users
 
 implement 'read' notifications back to slack server (?)
 
-implement channels ctl (join/leave)
+implement channels ctl (join/leave) - more history in channels?
 implement ch/history.json
 
 document locking order
