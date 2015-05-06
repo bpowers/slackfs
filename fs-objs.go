@@ -73,10 +73,6 @@ type Node struct {
 	mode os.FileMode
 }
 
-func (n *Node) Dirent() fuse.Dirent {
-	return fuse.Dirent{n.ino, 0, n.name}
-}
-
 func (n *Node) Name() string {
 	return n.name
 }
@@ -99,16 +95,16 @@ func (n *Node) Init(parent *DirNode, name string, priv interface{}) error {
 	return nil
 }
 
-func (dn *DirNode) DirentType() fuse.DirentType {
-	return fuse.DT_Dir
+func (n *DirNode) Dirent() fuse.Dirent {
+	return fuse.Dirent{n.ino, fuse.DT_Dir, n.name}
 }
 
-func (sn *SymlinkNode) DirentType() fuse.DirentType {
-	return fuse.DT_Link
+func (n *SymlinkNode) Dirent() fuse.Dirent {
+	return fuse.Dirent{n.ino, fuse.DT_Link, n.name}
 }
 
-func (an *AttrNode) DirentType() fuse.DirentType {
-	return fuse.DT_File
+func (n *AttrNode) Dirent() fuse.Dirent {
+	return fuse.Dirent{n.ino, fuse.DT_File, n.name}
 }
 
 type Updater interface {
@@ -118,7 +114,6 @@ type Updater interface {
 type INode interface {
 	fs.Node
 	Dirent() fuse.Dirent
-	DirentType() fuse.DirentType
 	IsDir() bool
 	Activate() error
 	Name() string
@@ -201,8 +196,6 @@ func (dn *DirNode) Attr(a *fuse.Attr) {
 func (dn *DirNode) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	dents := make([]fuse.Dirent, 0, len(dn.children))
 	for _, child := range dn.children {
-		dent := child.Dirent()
-		dent.Type = child.DirentType()
 		dents = append(dents, child.Dirent())
 	}
 	return dents, nil

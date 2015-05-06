@@ -255,8 +255,8 @@ func (an *SessionAttrNode) Activate() error {
 	return an.parent.addChild(an)
 }
 
-func (an *SessionAttrNode) DirentType() fuse.DirentType {
-	return fuse.DT_File
+func (n *SessionAttrNode) Dirent() fuse.Dirent {
+	return fuse.Dirent{n.ino, fuse.DT_File, n.name}
 }
 
 func (an *SessionAttrNode) IsDir() bool {
