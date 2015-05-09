@@ -58,7 +58,7 @@ func (ds *DirSet) Add(id, name string, priv interface{}) error {
 	}
 
 	ds.objDirs[id] = child
-	s, err := NewSymlinkNode(ds.byName, name, "../by-id/"+id, child)
+	s, err := NewSymlinkNode(ds.byName, name, child)
 	if err != nil {
 		return fmt.Errorf("NewSymlinkNode(%s): %s", name, err)
 	}

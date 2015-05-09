@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"sync"
@@ -95,6 +96,14 @@ func (n *Node) Init(parent *DirNode, name string, priv interface{}) error {
 	return nil
 }
 
+func (n *Node) INum() uint64 {
+	return n.ino
+}
+
+func (n *Node) Parent() *DirNode {
+	return n.parent
+}
+
 func (n *DirNode) Dirent() fuse.Dirent {
 	return fuse.Dirent{n.ino, fuse.DT_Dir, n.name}
 }
@@ -117,6 +126,8 @@ type INode interface {
 	IsDir() bool
 	Activate() error
 	Name() string
+	INum() uint64
+	Parent() *DirNode
 	//Update() ?
 }
 
@@ -286,15 +297,75 @@ func NewDirNode(parent *DirNode, name string, priv interface{}) (*DirNode, error
 	return dn, nil
 }
 
-func NewSymlinkNode(parent *DirNode, name string, targetPath string, target INode) (*SymlinkNode, error) {
+func findCommonAncestor(a, b INode) (INode, error) {
+	marked := make(map[uint64]struct{})
+	queue := make(chan INode, 2)
+
+	marked[a.INum()] = struct{}{}
+	marked[b.INum()] = struct{}{}
+
+	queue <- a.Parent()
+	queue <- b.Parent()
+
+outer:
+	for {
+		select {
+		case node := <-queue:
+			if _, ok := marked[node.INum()]; ok {
+				return node, nil
+			}
+			marked[node.INum()] = struct{}{}
+			queue <- node.Parent()
+		default:
+			break outer
+		}
+	}
+
+	return nil, fmt.Errorf("no common ancestor")
+}
+
+func relativeSymlinkPath(ancestor, parent, target INode) string {
+	var buf bytes.Buffer
+
+	if target == parent {
+		return "."
+	}
+
+	for n := parent; n != ancestor; n = n.Parent() {
+		buf.WriteString("../")
+	}
+
+	targetDirs := make([]INode, 0, 4)
+	for n := target; n != ancestor; n = n.Parent() {
+		targetDirs = append(targetDirs, n)
+	}
+	if len(targetDirs) > 0 {
+		for i := len(targetDirs) - 1; i >= 0; i-- {
+			buf.WriteString(targetDirs[i].Name())
+			buf.WriteByte('/')
+		}
+	}
+	// in all possible cases we've added a trailing slash that
+	// should be removed
+	result := buf.String()
+	return result[:len(result)-1]
+}
+
+func NewSymlinkNode(parent *DirNode, name string, target INode) (*SymlinkNode, error) {
 	sn := new(SymlinkNode)
 	err := sn.Node.Init(parent, name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("n.Init('%s'): %s", name, err)
 	}
-	sn.path = targetPath
-	sn.target = target
 
+	// XXX: locking?
+	ancestor, err := findCommonAncestor(target, parent)
+	if err != nil {
+		return nil, fmt.Errorf("findCommonAncestor: %s", err)
+	}
+
+	sn.path = relativeSymlinkPath(ancestor, parent, target)
+	sn.target = target
 	sn.mode = os.ModeSymlink | 0777
 
 	return sn, nil
