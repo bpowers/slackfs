@@ -18,14 +18,13 @@ type Channel struct {
 func NewChannel(sc slack.Channel, conn *FSConn) *Channel {
 	c := new(Channel)
 	c.Channel = sc
-	SessionInit(&c.Session, sc.Id, conn, conn.api.GetChannelHistory)
-
-	// fetch session history in the background
-	if c.IsOpen() {
-		go c.FetchHistory(c.LastRead, true)
-	}
+	c.Session.Init(c, conn, conn.api.GetChannelHistory)
 
 	return c
+}
+
+func (c *Channel) BaseChannel() *slack.BaseChannel {
+	return &c.Channel.BaseChannel
 }
 
 func (c *Channel) Id() string {

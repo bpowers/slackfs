@@ -6,7 +6,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/bpowers/slack"
 )
@@ -19,14 +18,13 @@ type IM struct {
 func NewIM(sim slack.IM, conn *FSConn) *IM {
 	im := new(IM)
 	im.IM = sim
-	SessionInit(&im.Session, sim.Id, conn, conn.api.GetIMHistory)
-
-	// fetch session history in the background
-	if im.IsOpen() {
-		go im.FetchHistory(im.LastRead, true)
-	}
+	im.Session.Init(im, conn, conn.api.GetIMHistory)
 
 	return im
+}
+
+func (im *IM) BaseChannel() *slack.BaseChannel {
+	return &im.IM.BaseChannel
 }
 
 func (im *IM) Id() string {
@@ -36,7 +34,6 @@ func (im *IM) Id() string {
 func (im *IM) Name() string {
 	u := im.conn.users.Get(im.UserId)
 	if u == nil {
-		log.Printf("im with unknown user: %s", im.UserId)
 		return im.IM.UserId
 	}
 	return u.Name

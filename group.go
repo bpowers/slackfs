@@ -18,14 +18,13 @@ type Group struct {
 func NewGroup(sg slack.Group, conn *FSConn) *Group {
 	g := new(Group)
 	g.Group = sg
-	SessionInit(&g.Session, sg.Id, conn, conn.api.GetGroupHistory)
-
-	// fetch session history in the background
-	if g.IsOpen() {
-		go g.FetchHistory(g.LastRead, true)
-	}
+	g.Session.Init(g, conn, conn.api.GetGroupHistory)
 
 	return g
+}
+
+func (g *Group) BaseChannel() *slack.BaseChannel {
+	return &g.Group.BaseChannel
 }
 
 func (g *Group) Id() string {

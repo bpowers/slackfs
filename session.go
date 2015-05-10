@@ -31,8 +31,9 @@ func (p msgSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 type HistoryFn func(id string, params slack.HistoryParameters) (*slack.History, error)
 
 type Session struct {
-	// set in SessionInit, immutable after
+	// set in Init, immutable after
 	history HistoryFn
+	room    Room
 	id      string
 	conn    *FSConn
 	fns     template.FuncMap
@@ -52,10 +53,11 @@ type Session struct {
 	newestTs    string // most recent timestamp
 }
 
-func SessionInit(s *Session, id string, conn *FSConn, history HistoryFn) {
+func (s *Session) Init(room Room, conn *FSConn, history HistoryFn) {
 	s.L = &s.mu
 	s.history = history
-	s.id = id
+	s.room = room
+	s.id = room.Id()
 	s.conn = conn
 	s.acks = make(map[int]struct{})
 
@@ -81,6 +83,21 @@ func SessionInit(s *Session, id string, conn *FSConn, history HistoryFn) {
 		"fmt": func(txt string) (string, error) {
 			return txt, nil
 		},
+	}
+
+	// fetch session history in the background
+	if room.IsOpen() {
+		c := room.BaseChannel()
+		latestTs := c.Latest.Timestamp
+		n := c.UnreadCount + 100
+		if n > 1000 {
+			n = 1000
+		}
+		go s.FetchHistory(slack.HistoryParameters{
+			Latest:    latestTs,
+			Count:     n,
+			Inclusive: true,
+		})
 	}
 }
 
@@ -140,7 +157,12 @@ func (s *Session) Event(evt slack.SlackEvent) bool {
 		if !ok {
 			return false
 		}
-		if err := s.FetchHistory(msg.Timestamp, true); err != nil {
+		params := slack.HistoryParameters{
+			Oldest:    msg.Timestamp,
+			Count:     1000,
+			Inclusive: true,
+		}
+		if err := s.FetchHistory(params); err != nil {
 			log.Printf("'%s'.FetchHistory() 2: %s", s.id, err)
 		}
 		return true
@@ -163,24 +185,26 @@ func (s *Session) formatMsg(msg *slack.Message) error {
 	return t.Execute(&s.formatted, msg)
 }
 
-func (s *Session) FetchHistory(oldest string, inclusive bool) error {
-	if oldest == "0000000000.000000" {
-		oldest = "0" // :(
+func (s *Session) FetchHistory(hp slack.HistoryParameters) error {
+	if hp.Oldest == "0000000000.000000" {
+		hp.Oldest = "0" // :(
 	}
-	h, err := s.history(s.id, slack.HistoryParameters{
-		Oldest:    oldest,
-		Count:     1000,
-		Inclusive: inclusive,
-	})
+	h, err := s.history(s.id, hp)
 	if err != nil {
-		// FIXME: if we fail, we don't set initialized to true
-		// and call Broadcast(), so anyone waiting on s.Cond
-		// will block forever.  Probably change the `go
-		// s.FetchHistory` in each of New{IM,Channel,Group} to
-		// something that both logs the error and marks us as
-		// initialized.
-		err = fmt.Errorf("GetHistory(%s, %s): %s", s.id, oldest, err)
+		// FIXME: this is sort of gross - we need to log here
+		// becuase we call FetchHistory via `go` in Init()
+		// above, so there is noone to check the error.  We
+		// also need to ensure that initialized is true and we
+		// wake any waiters, otherwise stat/read/getdents
+		// syscalls will block uninterruptably.
+		err = fmt.Errorf("GetHistory(%s, %#v): %s", s.id, hp, err)
 		log.Printf("%s", err)
+
+		s.L.Lock()
+		defer s.L.Unlock()
+		s.initialized = true
+		s.Broadcast()
+
 		return err
 	}
 
@@ -190,6 +214,8 @@ func (s *Session) FetchHistory(oldest string, inclusive bool) error {
 
 	sort.Sort(msgSlice(h.Messages))
 
+	lastReadTs := s.room.BaseChannel().LastRead
+
 	s.L.Lock()
 	defer s.L.Unlock()
 
@@ -198,6 +224,9 @@ func (s *Session) FetchHistory(oldest string, inclusive bool) error {
 		if err != nil {
 			log.Printf("formatMsg(%#v): %s", msg, err)
 		}
+		if !s.initialized && msg.Timestamp == lastReadTs {
+			s.formatted.WriteString("# current session begins here\n")
+		}
 	}
 	if len(h.Messages) > 0 {
 		s.newestTs = h.Messages[len(h.Messages)-1].Timestamp
@@ -205,7 +234,6 @@ func (s *Session) FetchHistory(oldest string, inclusive bool) error {
 		s.newestTs = "0000000000.000000"
 	}
 	s.initialized = true
-
 	s.Broadcast()
 
 	return nil

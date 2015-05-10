@@ -22,11 +22,12 @@ type EventHandler interface {
 
 type Room interface {
 	EventHandler
-	IsOpen() bool
-	//Open()  // maybe?
-	//Close() // maybe?
 	Id() string
 	Name() string
+	IsOpen() bool
+	BaseChannel() *slack.BaseChannel
+	//Open()  // maybe?
+	//Close() // maybe?
 }
 
 type FSConn struct {
