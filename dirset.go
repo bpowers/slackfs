@@ -8,6 +8,10 @@ import (
 	"fmt"
 )
 
+type DirOwner interface {
+	DirNode() *DirNode
+}
+
 // DirCreator matches the signature of New{Channel,Group,IM}Dir
 type DirCreator func(parent *DirNode, name string, priv interface{}) (*DirNode, error)
 

@@ -13,6 +13,8 @@ import (
 type IM struct {
 	slack.IM
 	Session
+
+	dir *DirNode
 }
 
 func NewIM(sim slack.IM, conn *FSConn) *IM {

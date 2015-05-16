@@ -260,6 +260,7 @@ func (us *UserSet) Event(evt slack.SlackEvent) bool {
 
 type RoomSet struct {
 	sync.Mutex
+	name string
 	objs map[string]Room
 	ds   *DirSet
 	conn *FSConn
@@ -268,11 +269,12 @@ type RoomSet struct {
 func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*RoomSet, error) {
 	var err error
 	rs := new(RoomSet)
+	rs.name = name
 	rs.conn = conn
 	rs.objs = make(map[string]Room)
 	rs.ds, err = NewDirSet(conn.super.root, name, create, conn)
 	if err != nil {
-		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
+		return nil, fmt.Errorf("NewDirSet('%s'): %s", name, err)
 	}
 
 	for _, room := range rooms {
@@ -282,6 +284,7 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 		// the case of IMs and groups, whether the room is
 		// 'open'.
 		if !room.IsOpen() {
+			fmt.Printf("not open: %s\n", room.Name())
 			continue
 		}
 		err = rs.ds.Add(room.Id(), room.Name(), room)
@@ -292,6 +295,12 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 
 	rs.ds.Activate()
 	return rs, nil
+}
+
+func (rs *RoomSet) Open(evt *slack.ChannelInfoEvent) bool {
+	fmt.Printf("opening %#v", evt)
+
+	return true
 }
 
 func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
@@ -309,6 +318,16 @@ func (rs *RoomSet) Event(evt slack.SlackEvent) bool {
 		if r, ok := rs.objs[msg.ChannelId]; ok {
 			return r.Event(evt)
 		}
+	case *slack.IMOpenEvent:
+		if rs.name == "ims" {
+			return rs.Open((*slack.ChannelInfoEvent)(msg))
+		}
+	case *slack.GroupOpenEvent:
+		if rs.name == "groups" {
+			return rs.Open((*slack.ChannelInfoEvent)(msg))
+		}
+	case *slack.IMCloseEvent:
+	case *slack.GroupCloseEvent:
 	}
 	return false
 }

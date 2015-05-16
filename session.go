@@ -38,6 +38,8 @@ type Session struct {
 	conn    *FSConn
 	fns     template.FuncMap
 
+	dir *DirNode
+
 	sync.Cond
 	mu sync.Mutex
 
@@ -72,7 +74,7 @@ func (s *Session) Init(room Room, conn *FSConn, history HistoryFn) {
 		"ts": func(ts, layout string) (string, error) {
 			secs, err := strconv.ParseFloat(ts, 64)
 			if err != nil {
-				log.Printf("ParseFloat(%s): %s", ts, err)
+				log.Panicf("ParseFloat(%s): %s", ts, err)
 				return ts, nil
 			}
 			sec := int64(secs)
