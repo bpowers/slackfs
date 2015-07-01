@@ -4,6 +4,11 @@ import "log"
 
 import "github.com/nsf/termbox-go"
 
+type Event struct {
+	termbox.Event
+	MousePos Point
+}
+
 // Represent a position in terms of the terminal's columns (X) and
 // rows (Y)
 type Point struct {
@@ -13,6 +18,10 @@ type Point struct {
 
 func (a Point) Add(b Point) Point {
 	return Point{a.X + b.X, a.Y + b.Y}
+}
+
+func (a Point) Sub(b Point) Point {
+	return Point{a.X - b.X, a.Y - b.Y}
 }
 
 // Shorthand for Point{X, Y}
@@ -63,8 +72,8 @@ type Box interface {
 	NeedsResize() bool
 	Resize(available Rect) (desired Rect)
 	NeedsDisplay() bool
-	Draw(View)                 // Draw yourself into this view
-	Handle(termbox.Event) bool // Event's MouseX/Y is Box-relative
+	Draw(View)         // Draw yourself into this view
+	Handle(Event) bool // Event's MousePos is Box-relative
 }
 
 type BoundedBox struct {
@@ -157,8 +166,16 @@ func (e *Container) Draw(view View) {
 	}
 }
 
-func (e *Container) Handle(ev termbox.Event) bool {
+func (e *Container) Handle(ev Event) bool {
 	for _, c := range e.children {
+		if ev.Type == termbox.EventMouse {
+			ev.MousePos = P(ev.MouseX, ev.MouseY)
+			if !c.Bounds.Contains(ev.MousePos) {
+				continue
+			}
+			// make position relative to this subview
+			ev.MousePos = ev.MousePos.Sub(c.Bounds.Point)
+		}
 		if c.Box.Handle(ev) {
 			return true
 		}
@@ -168,6 +185,30 @@ func (e *Container) Handle(ev termbox.Event) bool {
 
 func (e *Container) AddChild(child Box) {
 	e.children = append(e.children, BoundedBox{Box: child})
+}
+
+func (e *Container) NeedsResize() bool {
+	if e.needsResize {
+		return true
+	}
+	for _, c := range e.children {
+		if c.Box.NeedsResize() {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Container) NeedsDisplay() bool {
+	if e.needsResize {
+		return true
+	}
+	for _, c := range e.children {
+		if c.Box.NeedsDisplay() {
+			return true
+		}
+	}
+	return false
 }
 
 type Window struct {
@@ -185,7 +226,7 @@ func (e *Window) Paint() {
 	termbox.Flush()
 }
 
-func (e *Window) Handle(ev termbox.Event) bool {
+func (e *Window) Handle(ev Event) bool {
 	if ev.Type == termbox.EventResize {
 		e.needsDisplay = true
 		e.Resize(NewRect(0, 0, ev.Width, ev.Height))

@@ -15,7 +15,7 @@ type Header struct {
 	Element
 }
 
-func (e *Header) Handle(ev termbox.Event) bool {
+func (e *Header) Handle(ev Event) bool {
 	return false
 }
 
@@ -37,28 +37,44 @@ func (e *Header) Draw(view View) {
 
 type Footer struct {
 	Element
+	expanded bool
 }
 
-func (e *Footer) Handle(ev termbox.Event) bool {
+func (e *Footer) Handle(ev Event) bool {
+	if ev.MousePos.Y == 0 {
+		e.expanded = !e.expanded
+		e.needsResize = true
+		e.needsDisplay = true
+	}
 	return false
 }
 
 func (e *Footer) Resize(available Rect) (desired Rect) {
-	e.size = Size{available.Width, 1}
+	e.needsResize = false
+	height := 1
+	if e.expanded {
+		height += 4
+	}
+	e.size = Size{available.Width, height}
 	pos := available.Point
-	pos.Y += available.Height - 1
+	pos.Y += available.Height - height
 	return Rect{pos, e.Size()}
 }
 
 func (e *Footer) Draw(view View) {
-	view.String(P(0, 0), fgColor|bold, bgColor, "--+--")
+	e.needsDisplay = false
+	s := "--+--"
+	if e.expanded {
+		s = "-"
+	}
+	view.String(P(0, 0), fgColor|bold, bgColor, s)
 }
 
 type Outline struct {
 	Element
 }
 
-func (e *Outline) Handle(ev termbox.Event) bool {
+func (e *Outline) Handle(ev Event) bool {
 	return false
 }
 
@@ -112,11 +128,10 @@ func main() {
 			break
 		}
 
-		window.Handle(ev)
+		window.Handle(Event{Event: ev})
 		if window.NeedsResize() {
 			window.Resize(Rect{Point{0, 0}, window.Size()})
 		}
-
 		if window.NeedsDisplay() {
 			window.Paint()
 		}
