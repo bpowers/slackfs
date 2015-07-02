@@ -88,6 +88,10 @@ type View struct {
 	bounds Rect // bounds we're allowed to draw in
 }
 
+func (v *View) Subview(bounds Rect) View {
+	return View{Rect{v.bounds.Point.Add(bounds.Point), bounds.Size}}
+}
+
 // allow intuitive use of negative offsets
 func (v *View) normalize(pos Point) Point {
 	var result Point
@@ -159,12 +163,12 @@ func (e *Container) Resize(available Rect) (desired Rect) {
 		relBounds = relBounds.Sub(childBounds)
 	}
 
-	return Rect{desired.Point, e.Size()}
+	return Rect{available.Point, e.Size()}
 }
 
 func (e *Container) Draw(view View) {
 	for _, c := range e.children {
-		c.Box.Draw(View{c.Bounds})
+		c.Box.Draw(view.Subview(c.Bounds))
 	}
 }
 
