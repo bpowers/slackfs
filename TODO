@@ -1,3 +1,7 @@
+
+cleanup 'DirCreator' logic
+
+
 in a channel, show (+ keep updated) list of users
 
 implement 'read' notifications back to slack server (?)
