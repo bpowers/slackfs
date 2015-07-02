@@ -284,7 +284,6 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 		// the case of IMs and groups, whether the room is
 		// 'open'.
 		if !room.IsOpen() {
-			fmt.Printf("not open: %s\n", room.Name())
 			continue
 		}
 		err = rs.ds.Add(room.Id(), room.Name(), room)
