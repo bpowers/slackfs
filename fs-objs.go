@@ -304,8 +304,12 @@ func findCommonAncestor(a, b INode) (INode, error) {
 	marked[a.INum()] = struct{}{}
 	marked[b.INum()] = struct{}{}
 
-	queue <- a.Parent()
-	queue <- b.Parent()
+	if parent := a.Parent(); parent != nil {
+		queue <- parent
+	}
+	if parent := b.Parent(); parent != nil {
+		queue <- parent
+	}
 
 outer:
 	for {
@@ -315,7 +319,9 @@ outer:
 				return node, nil
 			}
 			marked[node.INum()] = struct{}{}
-			queue <- node.Parent()
+			if parent := node.Parent(); parent != nil {
+				queue <- parent
+			}
 		default:
 			break outer
 		}
