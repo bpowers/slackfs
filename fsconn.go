@@ -42,6 +42,7 @@ type FSConn struct {
 	channels *RoomSet
 	groups   *RoomSet
 	ims      *RoomSet
+	self     *Self
 }
 
 // shared by offline/offline public New functions
@@ -69,7 +70,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	}
 
 	conn.in = make(chan slack.SlackEvent)
-	conn.sinks = make([]EventHandler, 0, 4)
+	conn.sinks = make([]EventHandler, 0, 5)
 	conn.super = NewSuper()
 
 	users := make([]*User, 0, len(info.Users))
@@ -79,6 +80,11 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 	conn.users, err = NewUserSet("users", conn, NewUserDir, users)
 	if err != nil {
 		return nil, fmt.Errorf("NewUserSet: %s", err)
+	}
+
+	conn.self, err = NewSelf(conn, info.User, info.Team)
+	if err != nil {
+		return nil, fmt.Errorf("NewSelf: %s", err)
 	}
 
 	chans := make([]Room, 0, len(info.Channels))
@@ -172,6 +178,43 @@ func (fs *FSConn) Send(txtBytes []byte, id string) error {
 	// TODO(bp) add this message to the session buffer, after we
 	// get an ok
 	return err
+}
+
+type Self struct {
+	dn   *DirNode
+	team *DirNode
+	user *SymlinkNode
+}
+
+func NewSelf(conn *FSConn, user *slack.UserDetails, team *slack.Team) (*Self, error) {
+	var err error
+	self := new(Self)
+
+	self.dn, err = NewDirNode(conn.super.root, "self", conn)
+	if err != nil {
+		return nil, fmt.Errorf("NewDirNode(self): %s", err)
+	}
+	self.team, err = NewTeamDir(self.dn, "team", NewTeam(team, conn))
+	if err != nil {
+		return nil, fmt.Errorf("NewTeamDir(): %s", err)
+	}
+
+	userDir := conn.users.ds.LookupId(user.Id)
+	if userDir == nil {
+		// this is an invariant, can't continue if we don't
+		// know who we are.
+		panic(fmt.Sprintf("unknown user ID for self: %s", user.Id))
+	}
+	self.user, err = NewSymlinkNode(self.dn, "user", userDir)
+	if err != nil {
+		return nil, fmt.Errorf("NewSymlinkNode(self/user): %s", err)
+	}
+
+	self.user.Activate()
+	self.team.Activate()
+	self.dn.Activate()
+
+	return self, nil
 }
 
 type UserSet struct {
