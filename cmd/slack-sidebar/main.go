@@ -118,11 +118,12 @@ func (e *Footer) Resize(available Rect) (desired Rect) {
 
 func (e *Footer) Draw(view View) {
 	e.needsDisplay = false
-	s := "--+--"
+	s := "^"
 	if e.expanded {
-		s = "-"
+		s = "⌵"
+		view.String(P(e.size.Width/2-len("quit")/2, 2), fgColor|bold, bgColor, "quit")
 	}
-	view.String(P(0, 0), fgColor|bold, bgColor, s)
+	view.String(P(e.size.Width/2, 0), fgColor|bold, bgColor, s)
 }
 
 type Outline struct {
@@ -143,6 +144,95 @@ func (e *Outline) Draw(view View) {
 	view.SetCell(P(0, -1), '└', fgColor, bgColor)
 	view.SetCell(P(-1, 0), '┐', fgColor, bgColor)
 	view.SetCell(P(-1, -1), '┘', fgColor, bgColor)
+}
+
+type Channel struct {
+	name string
+	// users have 'away/avail'
+	away      bool
+	offline   bool
+	hasUnread bool
+	selected  bool
+}
+
+type Grouping struct {
+	Element
+	mount       string
+	path        string
+	displayName string
+	chanPrefix  string // channels should be prefixed by '#'
+	hasStatus   bool
+
+	items []*Channel
+}
+
+func NewGrouping(mount, path, displayName, chanPrefix string, hasStatus bool) (*Grouping, error) {
+	g := new(Grouping)
+	g.mount = mount
+	g.path = path
+	g.displayName = displayName
+	g.chanPrefix = chanPrefix
+	g.hasStatus = hasStatus
+	g.items = make([]*Channel, 0, 16)
+
+	err := g.updateItems()
+	if err != nil {
+		return nil, fmt.Errorf("updateItems(%s): %s", displayName, err)
+	}
+
+	return g, nil
+}
+
+func (e *Grouping) ClearSelection() {
+	for _, ch := range e.items {
+		ch.selected = false
+	}
+}
+
+func (e *Grouping) updateItems() error {
+	dPath := path.Join(e.mount, e.path, "by-name")
+	dents, err := ioutil.ReadDir(dPath)
+	if err != nil {
+		return fmt.Errorf("ReadDir(%s): %s", dPath, err)
+	}
+	for _, dent := range dents {
+		c := &Channel{name: dent.Name()}
+		// FIXME: hack to get user away/offline/available
+		if e.hasStatus {
+			presence, err := readFile(e.mount, "users", "by-name", dent.Name(), "presence")
+			if err == nil {
+				c.away = presence == "away"
+			}
+		}
+		e.items = append(e.items, c)
+	}
+	return nil
+}
+
+func (e *Grouping) Handle(ev Event) bool {
+	return false
+}
+
+func (e *Grouping) Resize(available Rect) (desired Rect) {
+	e.size = Size{available.Width, 2 + len(e.items)}
+	return Rect{available.Point, e.Size()}
+}
+
+func (e *Grouping) Draw(view View) {
+	view.String(P(0, 0), fgColor, bgColor, e.displayName)
+	for i, item := range e.items {
+		if e.chanPrefix != "" {
+			view.String(P(1, 1+i), fgColor, bgColor, e.chanPrefix)
+		}
+		view.String(P(2, 1+i), fgColor, bgColor, item.name)
+		if e.hasStatus {
+			fg := termbox.ColorGreen
+			if item.away {
+				fg = termbox.ColorBlack
+			}
+			view.SetCell(P(0, 1+i), '●', fg, bgColor)
+		}
+	}
 }
 
 func main() {
@@ -196,7 +286,26 @@ func main() {
 	}
 	window.AddChild(footer)
 
-	window.AddChild(new(Outline))
+	expandable := new(Container)
+
+	chans, err := NewGrouping(mountpoint, "channels", "CHANNELS", "#", false)
+	if err != nil {
+		log.Fatalf("NewGroup(channels): %s", err)
+	}
+	ims, err := NewGrouping(mountpoint, "ims", "DIRECT MESSAGES", "", true)
+	if err != nil {
+		log.Fatalf("NewGroup(ims): %s", err)
+	}
+	groups, err := NewGrouping(mountpoint, "groups", "PRIVATE GROUPS", "", false)
+	if err != nil {
+		log.Fatalf("NewGroup(groups): %s", err)
+	}
+	expandable.AddChild(chans)
+	expandable.AddChild(ims)
+	expandable.AddChild(groups)
+	//expandable.AddChild(new(Outline))
+
+	window.AddChild(expandable)
 
 	w, h := termbox.Size()
 	window.Resize(NewRect(0, 0, w, h))
