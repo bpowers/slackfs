@@ -57,18 +57,16 @@ func init() {
 
 	home := ""
 
+	// If we're statically linked, user.Current won't work.
 	if u, err := user.Current(); err == nil {
 		home = u.HomeDir
 	} else {
 		home = os.Getenv("HOME")
 	}
-	// if we're statically linked + HOME isn't set (running as a
-	// service under systemd?), we won't know our home directory.
-	// It is least surprising to fail, rather than look in
-	// whatever random directory we're in.
-	if home != "" {
-		defaultTokenPath = fmt.Sprintf("%s/.slack-token", home)
-	}
+	// If we don't have HOME in our environment, we might be
+	// running under something like a systemd chroot.  Check the
+	// chroot root.
+	defaultTokenPath = fmt.Sprintf("%s/.slack-token", home)
 }
 
 func getToken(flagPath string) string {
