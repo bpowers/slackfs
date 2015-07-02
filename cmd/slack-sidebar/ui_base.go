@@ -81,6 +81,9 @@ type BoundedBox struct {
 	Box    Box
 }
 
+// A view is a bounded subview of the terminal we're allowed to draw
+// into, along with convienence methods for drawing.  Prefer this to
+// termbox primitives.
 type View struct {
 	bounds Rect // bounds we're allowed to draw in
 }
@@ -125,8 +128,7 @@ type Element struct {
 
 type Container struct {
 	Element
-	children  []BoundedBox
-	canScroll bool // set only at initialization
+	children []BoundedBox
 }
 
 func (e *Element) Size() Size {
@@ -200,7 +202,7 @@ func (e *Container) NeedsResize() bool {
 }
 
 func (e *Container) NeedsDisplay() bool {
-	if e.needsResize {
+	if e.needsDisplay {
 		return true
 	}
 	for _, c := range e.children {

@@ -41,6 +41,9 @@ type Footer struct {
 }
 
 func (e *Footer) Handle(ev Event) bool {
+	if ev.Type != termbox.EventMouse {
+		return false
+	}
 	if ev.MousePos.Y == 0 {
 		e.expanded = !e.expanded
 		e.needsResize = true
