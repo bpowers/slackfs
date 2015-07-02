@@ -21,7 +21,7 @@ update-offline-info:
 	curl "https://slack.com/api/rtm.start?token=$(shell cat $(TOKEN_PATH) | cut -d ' ' -f 3)" | pretty >info.json
 
 count:
-	cat /tmp/slack/**/presence | sort | uniq -c
+	cat /tmp/slack/users/by-name/**/presence | sort | uniq -c
 
 clean:
 	rm -f ./slackfs *~
