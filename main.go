@@ -179,6 +179,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Printf("almost done")
 	time.Sleep(120 * time.Second)
 	log.Printf("done done")
 }

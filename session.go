@@ -20,7 +20,12 @@ import (
 	"golang.org/x/net/context"
 )
 
-const defaultMsgTmpl = "{{ts .Timestamp \"Jan 02 15:04:05\"}}\t{{username .}}\t{{fmt .Text}}\n"
+const (
+	// maximum history items we'll fetch at once
+	maxFetch = 1000
+
+	defaultMsgTmpl = "{{ts .Timestamp \"Jan 02 15:04:05\"}}\t{{username .}}\t{{fmt .Text}}\n"
+)
 
 type msgSlice []slack.Message
 
@@ -92,8 +97,8 @@ func (s *Session) Init(room Room, conn *FSConn, history HistoryFn) {
 		c := room.BaseChannel()
 		latestTs := c.Latest.Timestamp
 		n := c.UnreadCount + 100
-		if n > 1000 {
-			n = 1000
+		if n > maxFetch {
+			n = maxFetch
 		}
 		go s.FetchHistory(slack.HistoryParameters{
 			Latest:    latestTs,
@@ -161,7 +166,7 @@ func (s *Session) Event(evt slack.SlackEvent) bool {
 		}
 		params := slack.HistoryParameters{
 			Oldest:    msg.Timestamp,
-			Count:     1000,
+			Count:     maxFetch,
 			Inclusive: true,
 		}
 		if err := s.FetchHistory(params); err != nil {
@@ -210,8 +215,8 @@ func (s *Session) FetchHistory(hp slack.HistoryParameters) error {
 		return err
 	}
 
-	if h.HasMore {
-		log.Printf("TODO: we need to page/fetch more messages")
+	if h.HasMore && len(h.Messages) == maxFetch {
+		log.Printf("TODO: %s/%s has more (%#v).", s.room.Id(), s.room.Name(), hp)
 	}
 
 	sort.Sort(msgSlice(h.Messages))
