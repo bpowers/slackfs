@@ -75,11 +75,6 @@ func (e *Header) Draw(view View) {
 
 	view.SetCell(P(0, 1), '●', termbox.ColorGreen, bgColor)
 	view.String(P(2, 1), fgColor, bgColor, e.user)
-
-	//view.String(P(0, 3), fgColor, bgColor, "CHANNELS")
-	//view.String(P(0, 4), fgColor, bgColor, "#general")
-	//view.SetCell(P(19, 4), '✓', fgColor, bgColor)
-	//view.SetCell(P(22, 4), '⊗', fgColor, bgColor)
 }
 
 type Footer struct {
@@ -140,6 +135,7 @@ func (e *Outline) Resize(available Rect) (desired Rect) {
 }
 
 func (e *Outline) Draw(view View) {
+	e.needsDisplay = false
 	view.SetCell(P(0, 0), '┌', fgColor, bgColor)
 	view.SetCell(P(0, -1), '└', fgColor, bgColor)
 	view.SetCell(P(-1, 0), '┐', fgColor, bgColor)
@@ -157,6 +153,7 @@ type Channel struct {
 
 type Grouping struct {
 	Element
+	parent      *SelectorsContainer
 	mount       string
 	path        string
 	displayName string
@@ -166,8 +163,9 @@ type Grouping struct {
 	items []*Channel
 }
 
-func NewGrouping(mount, path, displayName, chanPrefix string, hasStatus bool) (*Grouping, error) {
+func NewGrouping(parent *SelectorsContainer, mount, path, displayName, chanPrefix string, hasStatus bool) (*Grouping, error) {
 	g := new(Grouping)
+	g.parent = parent
 	g.mount = mount
 	g.path = path
 	g.displayName = displayName
@@ -183,10 +181,40 @@ func NewGrouping(mount, path, displayName, chanPrefix string, hasStatus bool) (*
 	return g, nil
 }
 
+func (e *Grouping) SetNamedSelection(name string) bool {
+	for _, ch := range e.items {
+		if ch.name == name {
+			ch.selected = true
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Grouping) SetSelection(i int) {
+	if i >= 0 && i < len(e.items) {
+		e.items[i].selected = true
+		e.needsDisplay = true
+	}
+}
+
+func (e *Grouping) Selection() int {
+	for i, ch := range e.items {
+		if ch.selected {
+			return i
+		}
+	}
+	return -1
+}
+
 func (e *Grouping) ClearSelection() {
 	for _, ch := range e.items {
 		ch.selected = false
 	}
+}
+
+func (e *Grouping) SelectableCount() int {
+	return len(e.items)
 }
 
 func (e *Grouping) updateItems() error {
@@ -210,6 +238,15 @@ func (e *Grouping) updateItems() error {
 }
 
 func (e *Grouping) Handle(ev Event) bool {
+	if ev.Type == termbox.EventMouse && ev.Key == termbox.MouseLeft {
+		i := ev.MousePos.Y - 1
+		if i >= 0 && i < len(e.items) {
+			e.parent.ClearSelection()
+			e.items[i].selected = true
+			e.needsDisplay = true
+			return true
+		}
+	}
 	return false
 }
 
@@ -219,18 +256,30 @@ func (e *Grouping) Resize(available Rect) (desired Rect) {
 }
 
 func (e *Grouping) Draw(view View) {
+	e.needsDisplay = false
 	view.String(P(0, 0), fgColor, bgColor, e.displayName)
 	for i, item := range e.items {
-		if e.chanPrefix != "" {
-			view.String(P(1, 1+i), fgColor, bgColor, e.chanPrefix)
+		bg := bgColor
+		text := fgColor
+		if item.selected {
+			bg = termbox.ColorWhite
+			text = termbox.ColorBlack
+			for j := 0; j < e.size.Width; j++ {
+				view.SetCell(P(j, 1+i), ' ', text, bg)
+			}
+			view.SetCell(P(-3, 1+i), '✓', text, bg)
+			view.SetCell(P(-1, 1+i), '⊗', text, bg)
 		}
-		view.String(P(2, 1+i), fgColor, bgColor, item.name)
+		if e.chanPrefix != "" {
+			view.String(P(1, 1+i), text, bg, e.chanPrefix)
+		}
+		view.String(P(2, 1+i), text, bg, item.name)
 		if e.hasStatus {
 			fg := termbox.ColorGreen
 			if item.away {
 				fg = termbox.ColorBlack
 			}
-			view.SetCell(P(0, 1+i), '●', fg, bgColor)
+			view.SetCell(P(0, 1+i), '●', fg, bg)
 		}
 	}
 }
@@ -286,17 +335,17 @@ func main() {
 	}
 	window.AddChild(footer)
 
-	expandable := new(Container)
+	expandable := new(SelectorsContainer)
 
-	chans, err := NewGrouping(mountpoint, "channels", "CHANNELS", "#", false)
+	chans, err := NewGrouping(expandable, mountpoint, "channels", "CHANNELS", "#", false)
 	if err != nil {
 		log.Fatalf("NewGroup(channels): %s", err)
 	}
-	ims, err := NewGrouping(mountpoint, "ims", "DIRECT MESSAGES", "", true)
+	ims, err := NewGrouping(expandable, mountpoint, "ims", "DIRECT MESSAGES", "", true)
 	if err != nil {
 		log.Fatalf("NewGroup(ims): %s", err)
 	}
-	groups, err := NewGrouping(mountpoint, "groups", "PRIVATE GROUPS", "", false)
+	groups, err := NewGrouping(expandable, mountpoint, "groups", "PRIVATE GROUPS", "", false)
 	if err != nil {
 		log.Fatalf("NewGroup(groups): %s", err)
 	}
@@ -304,6 +353,8 @@ func main() {
 	expandable.AddChild(ims)
 	expandable.AddChild(groups)
 	//expandable.AddChild(new(Outline))
+
+	chans.SetNamedSelection("general")
 
 	window.AddChild(expandable)
 

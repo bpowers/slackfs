@@ -175,7 +175,6 @@ func (e *Container) Draw(view View) {
 func (e *Container) Handle(ev Event) bool {
 	for _, c := range e.children {
 		if ev.Type == termbox.EventMouse {
-			ev.MousePos = P(ev.MouseX, ev.MouseY)
 			if !c.Bounds.Contains(ev.MousePos) {
 				continue
 			}
@@ -217,6 +216,83 @@ func (e *Container) NeedsDisplay() bool {
 	return false
 }
 
+// something that allows subelements to be selected.
+type Selector interface {
+	Selection() int
+	SetSelection(int)
+	SetNamedSelection(string) bool
+	ClearSelection()
+	SelectableCount() int
+}
+
+type SelectorsContainer struct {
+	Container
+}
+
+func (e *SelectorsContainer) Handle(ev Event) bool {
+	if ev.Type == termbox.EventKey &&
+		(ev.Key == termbox.KeyArrowUp || ev.Key == termbox.KeyArrowDown) {
+		var off int
+		if ev.Key == termbox.KeyArrowUp {
+			off = -1
+		} else {
+			off = 1
+		}
+		for i, child := range e.children {
+			selector := child.Box.(Selector)
+
+			j := selector.Selection()
+			selector.ClearSelection()
+			if j < 0 {
+				continue
+			}
+			if j+off == selector.SelectableCount() {
+				j = 0
+				i = (i + 1) % len(e.children)
+			} else if j+off < 0 {
+				if i == 0 {
+					i = len(e.children) - 1
+				} else {
+					i--
+				}
+				j = e.children[i].Box.(Selector).SelectableCount() - 1
+			} else {
+				j += off
+			}
+			// XXX: users are not allowed to close the
+			// '#general' channel, so we will never have
+			// all 3 sections (im, channels, groups)
+			// empty, which means this will always
+			// terminate.  If that changes, this logic
+			// needs to change.
+			for e.children[i].Box.(Selector).SelectableCount() == 0 {
+				if i+off < 0 {
+					i = len(e.children) - 1
+				} else {
+					i = (i + off) % len(e.children)
+				}
+				if off < 0 {
+					j = e.children[i].Box.(Selector).SelectableCount() - 1
+				} else {
+					j = 0
+				}
+			}
+			e.children[i].Box.(Selector).SetSelection(j)
+			break
+		}
+		return true
+	}
+	return e.Container.Handle(ev)
+}
+
+func (e *SelectorsContainer) ClearSelection() {
+	for _, child := range e.children {
+		if selector, ok := child.Box.(Selector); ok {
+			selector.ClearSelection()
+		}
+	}
+}
+
 type Window struct {
 	Container
 }
@@ -238,5 +314,8 @@ func (e *Window) Handle(ev Event) bool {
 		e.Resize(NewRect(0, 0, ev.Width, ev.Height))
 		return true
 	}
+	// set MousePos in the window, so that sub containers can
+	// always use it.
+	ev.MousePos = P(ev.MouseX, ev.MouseY)
 	return e.Container.Handle(ev)
 }
