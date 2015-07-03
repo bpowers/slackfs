@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -51,10 +50,6 @@ func debugOut(msg interface{}) {
 }
 
 func init() {
-	// with more than 1 maxproc, we end up with wild, terrible
-	// memory fragmentation. pss goes from ~14 MB to 180 MB.
-	runtime.GOMAXPROCS(1)
-
 	home := ""
 
 	// If we're statically linked, user.Current won't work.
