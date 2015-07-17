@@ -2,26 +2,13 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"path"
 
 	"github.com/nsf/termbox-go"
 )
-
-const usage = `Usage: %s [OPTION...] MOUNTPOINT
-Sidebar controller for slack + tmux.
-
-Mountpoint must be passed pointing at the root of the slackfs instance
-we're to connect to.
-
-Options:
-`
-
-var memProfile, cpuProfile string
 
 const (
 	fgColor = termbox.ColorDefault
@@ -284,31 +271,17 @@ func (e *Grouping) Draw(view View) {
 	}
 }
 
-func main() {
-	flag.StringVar(&memProfile, "memprofile", "",
-		"write memory profile to this file")
-	flag.StringVar(&cpuProfile, "cpuprofile", "",
-		"write cpu profile to this file")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, usage, os.Args[0])
-		flag.PrintDefaults()
-	}
-	flag.Parse()
-	if flag.NArg() != 1 {
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	mountpoint := flag.Arg(0)
-
+func sidebarMain(mountpoint string) {
+	var err error
 	// FIXME: this is temporary
-	f, err := os.Create("log")
+	/*
+	f, err := os.OpenFile("log", os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		log.Fatalf("couldn't open log for writing: %s", err)
 	}
 	log.SetOutput(f)
 	defer f.Close()
+	*/
 
 	err = termbox.Init()
 	if err != nil {

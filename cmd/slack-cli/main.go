@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nsf/termbox-go"
 	"github.com/bpowers/go-tmux"
+	"github.com/kardianos/osext"
 )
 
 const usage = `Usage: %s [OPTION...] MOUNTPOINT
@@ -20,6 +22,7 @@ Options:
 `
 
 var memProfile, cpuProfile string
+var w, h int
 
 const mountpoint = "/tmp/slack"
 const sessionName = "slack"
@@ -35,9 +38,9 @@ func CreateWindow(mountpoint, kind, name string) error {
 	}
 
 	if _, err := tmux.GetSession(sessionName); err != nil {
-		tmux.NewWindow(target+":0", windowName, "tail", "-f", path.Join(dir, "session"))
-	} else {
 		tmux.NewSession(sessionName, windowName, "tail", "-f", path.Join(dir, "session"))
+	} else {
+		tmux.NewWindow(sessionName+":0", windowName, "-a", "tail", "-f", path.Join(dir, "session"))
 	}
 
 	tmux.SplitWindow(target+".0", "-b", "-h", "unset TMUX; exec tmux attach -t slack-shared:sidebar")
@@ -56,6 +59,8 @@ func main() {
 	flag.StringVar(&cpuProfile, "cpuprofile", "",
 		"write cpu profile to this file")
 
+	sidebar := flag.Bool("sidebar", false, "is a sidebar")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
 		flag.PrintDefaults()
@@ -66,9 +71,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = tmux.StartServer(); err != nil {
-		log.Fatalf("StartServer: %s", err)
+	if *sidebar {
+		sidebarMain(mountpoint)
+		return
 	}
+
+	exe, err := osext.Executable()
+	if err != nil {
+		log.Fatalf("unable to get path to current executable")
+	}
+
+	err = termbox.Init()
+	if err != nil {
+		log.Fatalf("termbox.Init: %s", err)
+	}
+	w, h = termbox.Size()
+	termbox.Close()
 
 	var session tmux.Session
 	if session, err = tmux.GetSession("slack-shared"); err != nil {
@@ -82,18 +100,18 @@ func main() {
 	// TODO: poll for some sort of 'ready' indicator
 
 	var window tmux.Window
-	if window, err = tmux.GetWindow("sidebar"); err != nil || window.Name == session.Name {
+	if window, err = tmux.GetWindow("sidebar"); err != nil || window.SessionName != session.Name {
 		target := fmt.Sprintf("%s:1", session.Name)
-		window, err = tmux.NewWindow(target, "sidebar", "../slack-sidebar/slack-sidebar", mountpoint)
+		window, err = tmux.NewWindow(target, "sidebar", exe, "-sidebar")
 		if err != nil {
 			log.Fatalf("NewWindow: %s", err)
 		}
 	}
 
 	CreateWindow(mountpoint, "channels", "general")
-	CreateWindow(mountpoint, "ims", "chris")
-	CreateWindow(mountpoint, "ims", "slackbot")
-	CreateWindow(mountpoint, "ims", "jeff")
+	//CreateWindow(mountpoint, "ims", "chris")
+	//CreateWindow(mountpoint, "ims", "slackbot")
+	//CreateWindow(mountpoint, "ims", "jeff")
 
 	tmuxPath, _ := exec.LookPath("tmux")
 	err = syscall.Exec(tmuxPath, []string{"tmux", "attach", "-t", sessionName}, os.Environ())
