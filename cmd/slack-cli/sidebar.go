@@ -6,7 +6,10 @@ import (
 	"io/ioutil"
 	"log"
 	"path"
+	"strings"
+	"time"
 
+	"github.com/bpowers/go-tmux"
 	"github.com/nsf/termbox-go"
 )
 
@@ -168,7 +171,7 @@ func NewGrouping(parent *SelectorsContainer, mount, path, displayName, chanPrefi
 	return g, nil
 }
 
-func (e *Grouping) SetNamedSelection(name string) bool {
+func (e *Grouping) SetNamedSelection(name string, interactive bool) bool {
 	for _, ch := range e.items {
 		if ch.name == name {
 			ch.selected = true
@@ -182,6 +185,9 @@ func (e *Grouping) SetSelection(i int) {
 	if i >= 0 && i < len(e.items) {
 		e.items[i].selected = true
 		e.needsDisplay = true
+		if err := FocusWindow(mountpoint, e.path, e.items[i].name); err != nil {
+			log.Printf("FocusWindow: %s", err)
+		}
 	}
 }
 
@@ -231,7 +237,33 @@ func (e *Grouping) Handle(ev Event) bool {
 			e.parent.ClearSelection()
 			e.items[i].selected = true
 			e.needsDisplay = true
+			if err := FocusWindow(mountpoint, e.path, e.items[i].name); err != nil {
+				log.Printf("FocusWindow: %s", err)
+			}
 			return true
+		}
+	} else if ev.Ev == EvTmux {
+		parts := strings.SplitN(ev.Window.Name, "/", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		path, cName := parts[0], parts[1]
+		if path != e.path {
+			return false
+		}
+		cName = strings.Replace(cName, "_", ".", -1)
+		for i := range e.items {
+			if e.items[i].name != cName {
+				continue
+			} else if e.items[i].selected {
+				// this item was already selected - no
+				// need to redraw or otherwise update
+				// state.
+				return true
+			}
+			e.parent.ClearSelection()
+			e.items[i].selected = true
+			e.needsDisplay = true
 		}
 	}
 	return false
@@ -271,16 +303,67 @@ func (e *Grouping) Draw(view View) {
 	}
 }
 
+func tmuxPoller(out chan<- Event) {
+	for {
+		windows, err := tmux.ListWindows()
+		if err != nil {
+			log.Printf("ListWindows: %s", err)
+			break
+		}
+		for _, w := range windows {
+			if w.SessionName != sessionName {
+				continue
+			}
+			if w.Active {
+				out <- Event{Ev: EvTmux, Window: w}
+				break
+			}
+		}
+		// FIXME: be smarter?
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func termboxPoller(out chan<- Event) {
+	for {
+		ev := termbox.PollEvent()
+		out <- Event{Ev: EvTermbox, Event: ev}
+	}
+}
+
+func poller(tmuxIn, termboxIn <-chan Event, groupings map[string]*Grouping, window *Window) {
+	for {
+		var ev Event
+		select {
+		case ev = <-tmuxIn:
+		case ev = <-termboxIn:
+		}
+		// quit on escape or 'q'
+		if ev.Event.Type == termbox.EventKey && (ev.Event.Key == termbox.KeyEsc || ev.Event.Ch == 'q') {
+			return
+		}
+
+		window.Handle(ev)
+		if window.NeedsResize() {
+			window.Resize(Rect{Point{0, 0}, window.Size()})
+		}
+		if window.NeedsDisplay() {
+			window.Paint()
+		}
+	}
+}
+
 func sidebarMain(mountpoint string) {
 	var err error
 	// FIXME: this is temporary
 	/*
-	f, err := os.OpenFile("log", os.O_RDWR|os.O_CREATE, 0600)
-	if err != nil {
-		log.Fatalf("couldn't open log for writing: %s", err)
-	}
-	log.SetOutput(f)
-	defer f.Close()
+		f, err := os.OpenFile("/home/bpowers/slack-sidebar.log", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+		if err != nil {
+			log.Fatalf("couldn't open log for writing: %s", err)
+		}
+		log.SetOutput(f)
+		log.Printf("logging to file.")
+		defer f.Close()
 	*/
 
 	err = termbox.Init()
@@ -327,7 +410,7 @@ func sidebarMain(mountpoint string) {
 	expandable.AddChild(groups)
 	//expandable.AddChild(new(Outline))
 
-	chans.SetNamedSelection("general")
+	chans.SetNamedSelection("general", true)
 
 	window.AddChild(expandable)
 
@@ -336,20 +419,16 @@ func sidebarMain(mountpoint string) {
 
 	window.Paint()
 
-	for {
-		ev := termbox.PollEvent()
+	tmuxEvents := make(chan Event)
+	termboxEvents := make(chan Event)
 
-		// quit on escape or 'q'
-		if ev.Type == termbox.EventKey && (ev.Key == termbox.KeyEsc || ev.Ch == 'q') {
-			break
-		}
-
-		window.Handle(Event{Event: ev})
-		if window.NeedsResize() {
-			window.Resize(Rect{Point{0, 0}, window.Size()})
-		}
-		if window.NeedsDisplay() {
-			window.Paint()
-		}
+	groupings := map[string]*Grouping{
+		"channels": chans,
+		"ims":      ims,
+		"groups":   groups,
 	}
+
+	go tmuxPoller(tmuxEvents)
+	go termboxPoller(termboxEvents)
+	poller(tmuxEvents, termboxEvents, groupings, window)
 }

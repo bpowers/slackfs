@@ -3,10 +3,21 @@ package main
 import "log"
 
 import "github.com/nsf/termbox-go"
+import "github.com/bpowers/go-tmux"
 
+const (
+	EvTermbox EventType = iota
+	EvTmux
+)
+
+type EventType int
+
+// FIXME: this is :(  refactor to use interfaces
 type Event struct {
+	Ev EventType
 	termbox.Event
 	MousePos Point
+	Window   tmux.Window
 }
 
 // Represent a position in terms of the terminal's columns (X) and
@@ -220,7 +231,7 @@ func (e *Container) NeedsDisplay() bool {
 type Selector interface {
 	Selection() int
 	SetSelection(int)
-	SetNamedSelection(string) bool
+	SetNamedSelection(string, bool) bool
 	ClearSelection()
 	SelectableCount() int
 }

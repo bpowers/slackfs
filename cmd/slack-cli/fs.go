@@ -49,7 +49,6 @@ func init() {
 	// running under something like a systemd chroot.  Check the
 	// chroot root.
 	defaultTokenPath = fmt.Sprintf("%s/.slack-token", home)
-	
 
 	flag.StringVar(&offline, "offline", "",
 		"specified JSON info response file to use offline")

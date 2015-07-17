@@ -7,10 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/nsf/termbox-go"
 	"github.com/bpowers/go-tmux"
 	"github.com/kardianos/osext"
 )
@@ -27,14 +27,14 @@ Options:
 `
 
 var memProfile, cpuProfile string
-var w, h int
 
 const mountpoint = "/tmp/slack"
 const sessionName = "slack"
 
 func CreateWindow(mountpoint, kind, name string) error {
+	tmuxName := strings.Replace(name, ".", "_", -1)
 	dir := path.Join(mountpoint, kind, "by-name", name)
-	windowName := fmt.Sprintf("%s/%s", kind, name)
+	windowName := fmt.Sprintf("%s/%s", kind, tmuxName)
 	target := fmt.Sprintf("%s:%s", sessionName, windowName)
 
 	// if the window already exists, exit early
@@ -53,6 +53,29 @@ func CreateWindow(mountpoint, kind, name string) error {
 	tmux.SplitWindow(target+".0", "-l", "2", "-v", fmt.Sprintf("cat >%s/write", dir))
 	tmux.SelectPane(target + ".2")
 
+	return nil
+}
+
+func FocusWindow(mountpoint, kind, name string) error {
+	tmuxName := strings.Replace(name, ".", "_", -1)
+	target := fmt.Sprintf("%s:%s/%s", sessionName, kind, tmuxName)
+
+	err := CreateWindow(mountpoint, kind, name)
+	if err != nil {
+		return fmt.Errorf("CreateWindow: %s", err)
+	}
+	clients, err := tmux.ListClients()
+	if err != nil {
+		return fmt.Errorf("ListClients: %s", err)
+	}
+	for _, c := range clients {
+		if c.SessionName != sessionName {
+			continue
+		}
+		if err := tmux.SwitchClient(c.TTY, target); err != nil {
+			return fmt.Errorf("SwitchClient(%s, %s): %s", c.TTY, target, err)
+		}
+	}
 	return nil
 }
 
@@ -96,13 +119,6 @@ func main() {
 		log.Fatalf("unable to get path to current executable")
 	}
 
-	err = termbox.Init()
-	if err != nil {
-		log.Fatalf("termbox.Init: %s", err)
-	}
-	w, h = termbox.Size()
-	termbox.Close()
-
 	var session tmux.Session
 	if session, err = tmux.GetSession("slack-shared"); err != nil {
 		session, err = tmux.NewSession("slack-shared", "slackfs", exe, "-fs")
@@ -113,7 +129,7 @@ func main() {
 
 	selfPath := path.Join(mountpoint, "self")
 	for _, err = os.Stat(selfPath); err != nil; _, err = os.Stat(selfPath) {
-		time.Sleep(200*time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		// TODO: exponential backoff + timeout
 	}
 
@@ -127,9 +143,6 @@ func main() {
 	}
 
 	CreateWindow(mountpoint, "channels", "general")
-	CreateWindow(mountpoint, "ims", "chris")
-	CreateWindow(mountpoint, "ims", "slackbot")
-	CreateWindow(mountpoint, "ims", "jeff")
 
 	tmuxPath, _ := exec.LookPath("tmux")
 	err = syscall.Exec(tmuxPath, []string{"tmux", "attach", "-t", sessionName}, os.Environ())
