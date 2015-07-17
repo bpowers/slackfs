@@ -18,6 +18,11 @@ import (
 const usage = `Usage: %s [OPTION...] MOUNTPOINT
 Command line slack client implemented with slackfs + tmux.
 
+If run with the -fs flag, the -token-path option or the
+SLACKFS_TOKEN_PATH environmental variable can be used to specify the
+location of a file containing your slack API token.  If neither is
+set, the default token file location of '%s' is tried.
+
 Options:
 `
 
@@ -60,6 +65,7 @@ func main() {
 		"write cpu profile to this file")
 
 	sidebar := flag.Bool("sidebar", false, "is a sidebar")
+	fs := flag.Bool("fs", false, "is slackfs")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
@@ -71,8 +77,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *sidebar && *fs {
+		fmt.Printf("fatal: -sidebar and -fs are mutually exclusive")
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	if *sidebar {
 		sidebarMain(mountpoint)
+		return
+	} else if *fs {
+		fsMain(mountpoint)
 		return
 	}
 
@@ -90,14 +105,17 @@ func main() {
 
 	var session tmux.Session
 	if session, err = tmux.GetSession("slack-shared"); err != nil {
-		session, err = tmux.NewSession("slack-shared", "slackfs", "slackfs", mountpoint)
+		session, err = tmux.NewSession("slack-shared", "slackfs", exe, "-fs")
 		if err != nil {
 			log.Fatalf("NewSession: %s", err)
 		}
-		time.Sleep(5 * time.Second)
 	}
 
-	// TODO: poll for some sort of 'ready' indicator
+	selfPath := path.Join(mountpoint, "self")
+	for _, err = os.Stat(selfPath); err != nil; _, err = os.Stat(selfPath) {
+		time.Sleep(200*time.Millisecond)
+		// TODO: exponential backoff + timeout
+	}
 
 	var window tmux.Window
 	if window, err = tmux.GetWindow("sidebar"); err != nil || window.SessionName != session.Name {
@@ -109,9 +127,9 @@ func main() {
 	}
 
 	CreateWindow(mountpoint, "channels", "general")
-	//CreateWindow(mountpoint, "ims", "chris")
-	//CreateWindow(mountpoint, "ims", "slackbot")
-	//CreateWindow(mountpoint, "ims", "jeff")
+	CreateWindow(mountpoint, "ims", "chris")
+	CreateWindow(mountpoint, "ims", "slackbot")
+	CreateWindow(mountpoint, "ims", "jeff")
 
 	tmuxPath, _ := exec.LookPath("tmux")
 	err = syscall.Exec(tmuxPath, []string{"tmux", "attach", "-t", sessionName}, os.Environ())
