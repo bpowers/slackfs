@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package slackfs
 
 import (
 	"encoding/json"
@@ -31,7 +31,7 @@ type Room interface {
 }
 
 type FSConn struct {
-	super *Super
+	Super *Super
 
 	api *slack.Slack
 	ws  *slack.SlackWS
@@ -71,7 +71,7 @@ func newFSConn(token, infoPath string) (conn *FSConn, err error) {
 
 	conn.in = make(chan slack.SlackEvent)
 	conn.sinks = make([]EventHandler, 0, 5)
-	conn.super = NewSuper()
+	conn.Super = NewSuper()
 
 	users := make([]*User, 0, len(info.Users))
 	for _, u := range info.Users {
@@ -190,7 +190,7 @@ func NewSelf(conn *FSConn, user *slack.UserDetails, team *slack.Team) (*Self, er
 	var err error
 	self := new(Self)
 
-	self.dn, err = NewDirNode(conn.super.root, "self", conn)
+	self.dn, err = NewDirNode(conn.Super.root, "self", conn)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirNode(self): %s", err)
 	}
@@ -229,7 +229,7 @@ func NewUserSet(name string, conn *FSConn, create DirCreator, users []*User) (*U
 	us := new(UserSet)
 	us.conn = conn
 	us.objs = make(map[string]*User)
-	us.ds, err = NewDirSet(conn.super.root, name, create, conn)
+	us.ds, err = NewDirSet(conn.Super.root, name, create, conn)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirSet('groups'): %s", err)
 	}
@@ -315,7 +315,7 @@ func NewRoomSet(name string, conn *FSConn, create DirCreator, rooms []Room) (*Ro
 	rs.name = name
 	rs.conn = conn
 	rs.objs = make(map[string]Room)
-	rs.ds, err = NewDirSet(conn.super.root, name, create, conn)
+	rs.ds, err = NewDirSet(conn.Super.root, name, create, conn)
 	if err != nil {
 		return nil, fmt.Errorf("NewDirSet('%s'): %s", name, err)
 	}

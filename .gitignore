@@ -1,5 +1,5 @@
 *~
-/slackfs
+/cmd/slackfs/slackfs
 /info.json
 
 *.prof

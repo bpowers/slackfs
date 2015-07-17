@@ -17,6 +17,7 @@ import (
 
 	"github.com/bpowers/fuse"
 	"github.com/bpowers/fuse/fs"
+	"github.com/bpowers/slackfs"
 )
 
 const (
@@ -118,7 +119,7 @@ func main() {
 
 	mountpoint := flag.Arg(0)
 
-	prof, err := NewProf(memProfile, cpuProfile)
+	prof, err := slackfs.NewProf(memProfile, cpuProfile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -152,11 +153,11 @@ func main() {
 		log.Fatalf("couldn't create mountpoint: %s", err)
 	}
 
-	var conn *FSConn
+	var conn *slackfs.FSConn
 	if *offline != "" {
-		conn, err = NewOfflineFSConn(*offline)
+		conn, err = slackfs.NewOfflineFSConn(*offline)
 	} else {
-		conn, err = NewFSConn(token)
+		conn, err = slackfs.NewFSConn(token)
 	}
 	if err != nil {
 		log.Fatalf("NewFS: %s", err)
@@ -174,6 +175,9 @@ func main() {
 	}
 	defer c.Close()
 	defer fuse.Unmount(mountpoint)
+	defer func() {
+		log.Printf("closed + unmounted fs")
+	}()
 
 	// check if the mount process has an error to report
 	<-c.Ready
@@ -183,7 +187,7 @@ func main() {
 
 	log.Printf("FS ready, serving requests")
 
-	err = fs.Serve(c, conn.super, debugFn)
+	err = fs.Serve(c, conn.Super, debugFn)
 	if err != nil {
 		log.Fatal(err)
 	}
