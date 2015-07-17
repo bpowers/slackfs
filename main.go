@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"os/user"
 	"syscall"
-	"time"
 
 	"github.com/bpowers/fuse"
 	"github.com/bpowers/fuse/fs"
@@ -129,13 +128,25 @@ func main() {
 	// Set up channel on which to send signal notifications.  We
 	// must use a buffered channel or risk missing the signal if
 	// we're not ready to receive when the signal is sent.
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGQUIT)
+	sigChan := make(chan os.Signal, 16)
+	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
 	go func() {
-		for range sigChan {
-			prof.Stop()
+		for sig := range sigChan {
+			switch sig {
+			case syscall.SIGQUIT:
+				prof.Stop()
+			default:
+				fuse.Unmount(mountpoint)
+			}
 		}
 	}()
+
+	// If a previous slackfs instance exited without unmounting,
+	// the FS will still be visiible in mtab, but stat will return
+	// ENOTCONN.  Unmount if that is the case.
+	if _, err := os.Stat(mountpoint); err != nil && err.(*os.PathError).Err == syscall.ENOTCONN {
+		fuse.Unmount(mountpoint)
+	}
 
 	if err := os.MkdirAll(mountpoint, 0777); err != nil {
 		log.Fatalf("couldn't create mountpoint: %s", err)
@@ -162,11 +173,7 @@ func main() {
 		log.Fatalf("Mount(%s): %s", mountpoint, err)
 	}
 	defer c.Close()
-
-	err = fs.Serve(c, conn.super, debugFn)
-	if err != nil {
-		log.Fatal(err)
-	}
+	defer fuse.Unmount(mountpoint)
 
 	// check if the mount process has an error to report
 	<-c.Ready
@@ -174,7 +181,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("almost done")
-	time.Sleep(120 * time.Second)
-	log.Printf("done done")
+	log.Printf("FS ready, serving requests")
+
+	err = fs.Serve(c, conn.super, debugFn)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
