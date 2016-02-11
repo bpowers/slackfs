@@ -150,7 +150,9 @@ func main() {
 	}
 
 	if err := os.MkdirAll(mountpoint, 0777); err != nil {
-		log.Fatalf("couldn't create mountpoint: %s", err)
+		if _, serr := os.Stat(mountpoint); serr != nil {
+			log.Fatalf("couldn't create mountpoint: %s (%s)", err, serr)
+		}
 	}
 
 	var conn *slackfs.FSConn
